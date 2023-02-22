@@ -6,7 +6,7 @@ import re
 import cv2 as cv
 import numpy as np
 
-from config import DATA_DIR, DET_DIR, UNDET_DIR
+from config import DATA_DIR
 
 
 def load_image(path):
@@ -62,7 +62,7 @@ def select_corners_event(event, x, y, flags, params):
     """Allow user to click corners of a chessboard, return coordinates."""
 
     # Get name for window, the image, and found corners from params
-    window_name, img, corners = params
+    window_name, img, corners  = params
 
     # Only on left mouse button
     if event == cv.EVENT_LBUTTONDOWN:
@@ -77,6 +77,7 @@ def select_corners_event(event, x, y, flags, params):
             f"{corner_texts[len(corners)]}: ({x}, {y})",
             (x, y), font, 1,
             (0, 0, 255), 2)
+
 
         img[y-PADDING:y+PADDING, x-PADDING:x+PADDING] = (0, 0, 255)
         cv.imshow(window_name, img)
@@ -93,16 +94,18 @@ def click_corners(img):
     """Click 4 corners and select their coordinates"""
 
     window_name = "Select corners"
-    cv.imshow(window_name, img)
+    ui_img = img.copy()
+    cv.imshow(window_name, ui_img)
 
     corners = []
 
     # Set mouse callback, will allow user to select 4 corners
     cv.setMouseCallback("Select corners", select_corners_event,
-                        (window_name, img, corners))
+                        (window_name, ui_img, corners))
 
     # Wait forever, untill mousecallback destorys all windows.
     cv.waitKey(0)
+
     return corners
 
 

@@ -5,7 +5,7 @@ import time
 import cv2 as cv
 import numpy as np
 
-from config import DATA_DIR, CHESS_DIMS, STRIDE_LEN
+from config import DATA_DIR
 
 
 def load_internal_calibrations(experiment):
@@ -46,12 +46,15 @@ def draw_cube(img, corners, imgpts):
     return img
 
 
-def draw(img, mtx, dist, pattern_size=CHESS_DIMS, stride_len=STRIDE_LEN, include_error=True):
+def draw(img, mtx, dist, pattern_size, stride_len, corners = None, include_error=True):
     """
     Draw axis lines and cube on chessboard.
     """
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    ret, corners = cv.findChessboardCorners(gray, pattern_size, None)
+    if corners is None:
+        ret, corners = cv.findChessboardCorners(gray, pattern_size, None)
+    else:
+        ret = True
     error = None
     if not ret:
         return img, error
@@ -68,7 +71,7 @@ def draw(img, mtx, dist, pattern_size=CHESS_DIMS, stride_len=STRIDE_LEN, include
     cube_lines = np.float32(
         [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0],
          [0, 0, -1], [0, 1, -1], [1, 1, -1], [1, 0, -1]]
-    ) * STRIDE_LEN * CUBE_UNIT_SIZE
+    ) * stride_len * CUBE_UNIT_SIZE
 
     objp = np.zeros((pattern_size[0]*pattern_size[1], 3), np.float32)
     objp[:, :2] = np.mgrid[0:pattern_size[0],
