@@ -26,7 +26,7 @@ def find_chessboard_corners(img, pattern_size, improve = True):
     ret, corners = cv.findChessboardCorners(gray, pattern_size, None)
     if ret and improve:
         criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-        ret, corners =  cv.cornerSubPix(gray, interp_corners, (11, 11), (-1, -1), criteria)
+        ret, corners =  cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
     return ret, corners
 
 
@@ -174,7 +174,7 @@ def interpolate_from_corners(img, clicked_corners, pattern_size):
     return np.expand_dims(interp_corners, axis=1)
 
 
-def interpolate_chessboard(img, pattern_size, improve_corner_points=True, improve_interp_points=True):
+def interpolate_chessboard(img, pattern_size, window_size = (11, 11), improve_corner_points=True, improve_interp_points=True):
     """Start interpolation of chessboard"""
     # Obtain corners from UI
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -192,7 +192,7 @@ def interpolate_chessboard(img, pattern_size, improve_corner_points=True, improv
         img, clicked_corners, pattern_size=pattern_size)
 
     if improve_interp_points:
-        return True, cv.cornerSubPix(gray, interp_corners, (11, 11), (-1, -1), criteria)
+        return True, cv.cornerSubPix(gray, interp_corners, window_size, (-1, -1), criteria)
 
     # Return ret=True, and the interpolated corners, just like findChessboardCorners
     return True, interp_corners
@@ -211,31 +211,7 @@ def sample_files(dir_path, n, ext="jpg"):
     # If sample size is lower than amount of files
     else:
         # Subsample first n files
-        selected_files = list(np.take(filterd_files, np.arange(0, n)))
+        selected_files = list(np.take(filterd_files, np.linspace(0, n, dtype=int)))
 
     # Join each file to full path and return
     return [os.path.join(dir_path, file) for file in selected_files]
-
-
-def get_pictures(n_detected, n_undetected, ext="jpg"):
-    """
-    Get pictures from a specfic directory.
-    Get pictures both where edges were detected and undetected.
-    """
-    # Get absolute system path path
-    # Get both undetected and deteced folders
-    paths = []
-
-    # Add n file paths from those folders
-    paths += sample_files(UNDET_DIR, n_undetected, ext=ext)
-    paths += sample_files(DET_DIR, n_detected, ext=ext)
-    return paths
-
-
-if __name__ == "__main__":
-    img = load_image(os.path.join(DATA_DIR, "chessboard2.jpg"))
-    res, interp_corners = interpolate_chessboard(
-        img, (9, 6), improve_corner_points=True, improve_interp_points=False)
-    cv.drawChessboardCorners(img, (9, 6), interp_corners, res)
-    cv.imshow("Interpolation", img)
-    cv.waitKey(0)

@@ -7,16 +7,18 @@ import os
 import cv2 as cv
 import numpy as np
 
-from config import CHESS_DIMS
+from config import get_cam_dir, CHESS_DIMS
 from util import interpolate_chessboard, sample_files
-from online import draw
+
 
 def get_frame(video, frame_id):
+    """Get a specific frame from a video."""
     video.set(cv.CAP_PROP_POS_FRAMES, frame_id)
     return video.read()
-    
-def frames(video_path, n_samples):
-    video = cv.VideoCapture(video_path)
+
+
+def frames(video, n_samples):
+    """Load a video and iterate over it's frames."""
     length = video.get(cv.CAP_PROP_FRAME_COUNT)
     sampled_frames = np.linspace(
         0, length, num=n_samples, endpoint=False, dtype=int)
@@ -26,16 +28,16 @@ def frames(video_path, n_samples):
             yield frame
 
 
-
-def detect_and_save_frames(video_path, pattern_size, n_samples, manual_interpolate, output_dirname="frames") -> None:
+def detect_and_save_frames(video_path, pattern_size, n_samples, manual_interpolate, output_dirname="frames", show_live=False) -> None:
     """Samples frame from video, save to disk."""
     video_dir = os.path.dirname(video_path)
+    video = cv.VideoCapture((os.path.join(video_dir, "intrinsics.avi")))
     frame_dir = os.path.join(video_dir, output_dirname)
     if not os.path.exists(frame_dir):
         os.mkdir(frame_dir)
 
     correct = 0
-    for idx, frame in enumerate(frames(video_path, n_samples)):
+    for idx, frame in enumerate(frames(video, n_samples)):
         output_frame = frame.copy()
         gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
         ret, corners = cv.findChessboardCorners(gray, pattern_size, None)
@@ -46,23 +48,37 @@ def detect_and_save_frames(video_path, pattern_size, n_samples, manual_interpola
         else:
             if manual_interpolate:
                 ret, corners = interpolate_chessboard(frame, pattern_size)
-        cv.drawChessboardCorners(frame, pattern_size, corners, ret)
-        cv.imshow("Frame", frame)
-        cv.waitKey(5)
-    print(correct)
+        if show_live:
+            cv.drawChessboardCorners(frame, pattern_size, corners, ret)
+            cv.imshow("Frame", frame)
+            cv.waitKey(5)
 
 
-def calibrate_camera(num, n_images, pattern_size, **kwargs):
-    # Open correct camera name folder
-    # Call calibrate with image paths, pattern_size=pattern_size, checker_size = 1
-    # Save calibration
-    file_paths = os.path.join("data", f"cam{num}", "frames")
+def sample_video_and_calibrate(num, n_samples, n_calibration, pattern_size, manual_interpolate, frame_dirname="frames", **kwargs):
+    cam_dir = get_cam_dir(num)
+    vid_path = os.path.join(cam_dir, "intrinsics.avi")
+    detect_and_save_frames(vid_path, pattern_size, n_samples,
+                           manual_interpolate, output_dirname=frame_dirname, **kwargs)
+    mtx, dist = calibrate_camera(
+        num, n_calibration, pattern_size, frame_dirname=frame_dirname, **kwargs)
+    return mtx, dist
 
+
+def calibrate_camera(num, n_images, pattern_size, frame_dirname="frames", **kwargs):
+    """Calibrate a specific camera."""
+    file_paths = os.path.join("data", f"cam{num}", frame_dirname)
+    cam_dir = get_cam_dir(num)
     files = sample_files(file_paths, n_images)
-    return calibrate(files, pattern_size, 1, **kwargs)
+    _, mtx, dist, _, _ = calibrate(files, pattern_size, 1, **kwargs)
+    calib_path = os.path.join(cam_dir, "calibration")
+    if not os.path.exists(calib_path):
+        os.mkdir(calib_path)
+    np.save(os.path.join(calib_path, "mtx"), mtx)
+    np.save(os.path.join(calib_path, "dist"), dist)
+    return mtx, dist
 
 
-def calibrate(image_paths, pattern_size, checker_size, show_live = False):
+def calibrate(image_paths, pattern_size, checker_size, show_live=False):
     """Calibrate from images at certain paths."""
     imgpoints = []
     objectpoints = []
@@ -87,21 +103,44 @@ def calibrate(image_paths, pattern_size, checker_size, show_live = False):
 
     cv.destroyAllWindows()
 
-    return cv.calibrateCameraExtended(
+    return cv.calibrateCamera(
         objectpoints, imgpoints, gray.shape[::-1], cv.CALIB_USE_INTRINSIC_GUESS, None)
 
 
+def calibrate_all(n_calibration, pattern_size, manual_interpolate, show_live, frame_dirname="frames", n_sample=None):
+    CAMERAS = [1, 2, 3, 4]
+    for camera_num in CAMERAS:
+        if n_sample is not None:
+            sample_video_and_calibrate(camera_num, n_sample, n_calibration,
+                                       pattern_size, manual_interpolate, show_live=show_live)
+        else:
+            calibrate_camera(camera_num, n_calibration, pattern_size, frame_dirname=frame_dirname)
+
+
+
 if __name__ == "__main__":
-    res = calibrate_camera(1, 30, CHESS_DIMS, show_live=True)
-    mtx, dist = res[1:3]
-    chess_frame = [frame for frame in frames(os.path.join("data", "cam1", "checkerboard.avi"), 1)][0]
-    _, corners = interpolate_chessboard(chess_frame, CHESS_DIMS, improve_interp_points=False, improve_corner_points=False)
-    img, error = draw(chess_frame, mtx, dist, CHESS_DIMS, 1, corners=corners, include_error=False)
-    cv.drawChessboardCorners(chess_frame, CHESS_DIMS, corners, True)
-    # chess_frame = [frame for frame in frames(os.path.join("data", "cam1", "intrinsics.avi"), 200)]
-    # for frame in chess_frame:
-    #     ret, corners = cv.findChessboardCorners(frame, CHESS_DIMS)
-    #     if ret:
-    #         img, error = draw(frame, mtx, dist, CHESS_DIMS, 1, corners=corners, include_error=False)
-    #         cv.imshow('img', img)
-    #         cv.waitKey(0)
+    calibrate_all(40, CHESS_DIMS, False, False)
+    # mtx, dist = res[1:3]
+    # img = [frame for frame in frames(os.path.join(
+    #     "data", "cam1", "checkerboard.avi"), 1)][0]
+    #
+    # scale_percent = 200  # percent of original size
+    # width = int(img.shape[1] * scale_percent / 100)
+    # height = int(img.shape[0] * scale_percent / 100)
+    # dim = (width, height)
+    #
+    # resized = cv.resize(img, dim, interpolation=cv.INTER_LANCZOS4)
+    # _, corners = interpolate_chessboard(
+    #     resized, CHESS_DIMS, window_size=(3, 3))
+    #
+    # corners = corners / (scale_percent / 100)
+    # temp = img.copy()
+    # cv.drawChessboardCorners(temp, CHESS_DIMS, corners, True)
+    # cv.imshow('img', temp)
+    # cv.waitKey(0)
+    #
+    # output, error = draw(img, mtx, dist, CHESS_DIMS, 1,
+    #                      corners=corners, include_error=False)
+    #
+    # cv.imshow('img', output)
+    # cv.waitKey(0)
