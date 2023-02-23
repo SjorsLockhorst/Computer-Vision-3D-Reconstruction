@@ -8,7 +8,8 @@ import cv2 as cv
 import numpy as np
 
 from config import get_cam_dir, CHESS_DIMS
-from util import interpolate_chessboard, sample_files
+from util import interpolate_chessboard, sample_files, interpolate_chessboard_with_perspective
+from online import load_internal_calibrations, draw
 
 
 def get_frame(video, frame_id):
@@ -119,10 +120,20 @@ def calibrate_all(n_calibration, pattern_size, manual_interpolate, show_live, fr
 
 
 if __name__ == "__main__":
-    calibrate_all(40, CHESS_DIMS, False, False)
+    # calibrate_all(40, CHESS_DIMS, False, False)
     # mtx, dist = res[1:3]
-    # img = [frame for frame in frames(os.path.join(
-    #     "data", "cam1", "checkerboard.avi"), 1)][0]
+    video = cv.VideoCapture(os.path.join(
+        "data", "cam1", "checkerboard.avi"))
+    img = [frame for frame in frames(video, 1)][0]
+    res, corners2 = interpolate_chessboard_with_perspective(img, CHESS_DIMS, window_size=(2, 2))
+    cv.drawChessboardCorners(img, CHESS_DIMS, corners2, True)
+
+
+    # mtx, dist = load_internal_calibrations(1)
+    # img, error = draw(img, mtx, dist, CHESS_DIMS, 1, corners=corners2, include_error=True)
+    cv.imshow("original", img)
+    cv.waitKey(0)
+
     #
     # scale_percent = 200  # percent of original size
     # width = int(img.shape[1] * scale_percent / 100)
