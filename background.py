@@ -14,20 +14,48 @@ def frames(video_path):
         if ret:
             yield frame
 
-
-def create_gaussian(video_path):
+def get_foreground_image(video_path):
     frames_list = []
 
     for frame in frames(video_path):
-        hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+        hsv = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
         frames_list.append(hsv)
 
+    frames_list = np.array(frames_list)
 
-    means = np.mean(frames_list)
-    stds = np.std(frames_list)
+    img = frames_list[0]
 
-    return means, stds
+    cv.imshow('img', img)
+    cv.waitKey(0)
+
+    return frames_list[0]
+
+
+
+def create_background_model(video_path):
+    frames_list = []
+
+    for frame in frames(video_path):
+        hsv = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+        frames_list.append(hsv)
+
+    frames_list = np.array(frames_list)
+
+    print(frames_list.shape)
+
+    mean_background_hsv = np.mean(frames_list, axis=0)
+
+    return mean_background_hsv
+
+def substract_background(mean_background_hsv, img):
+    
+    new_img = abs(img - mean_background_hsv)
+
+    cv.imshow('new_img', new_img)
+    cv.waitKey(0)
 
 if __name__ == "__main__":
-    means, stds = create_gaussian(os.path.abspath(os.path.join(get_cam_dir(1), "background.avi")))
-    print(means, stds)
+    mean_background_hsv = create_background_model(os.path.abspath(os.path.join(get_cam_dir(1), "background.avi")))
+    print(mean_background_hsv.shape)
+    img = get_foreground_image(os.path.abspath(os.path.join(get_cam_dir(1), "video.avi")))
+    substract_background(mean_background_hsv, img)
