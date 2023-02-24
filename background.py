@@ -30,8 +30,6 @@ def get_foreground_image(video_path):
 
     return frames_list[0]
 
-
-
 def create_background_model(video_path):
     frames_list = []
 
@@ -41,8 +39,6 @@ def create_background_model(video_path):
 
     frames_list = np.array(frames_list)
 
-    print(frames_list.shape)
-
     mean_background_hsv = np.mean(frames_list, axis=0)
 
     return mean_background_hsv
@@ -51,11 +47,22 @@ def substract_background(mean_background_hsv, img):
     
     new_img = abs(img - mean_background_hsv)
 
-    cv.imshow('new_img', new_img)
+    final_img = np.uint8(np.where(new_img > 20, 255, 0))
+
+    kernel = np.ones((5,5), np.uint8) 
+
+    img_dilation = cv.dilate(img, kernel, iterations=1)
+    
+    # mask = np.where(new_img > 20, 1, 0)
+
+    # final_img = np.uint8(mask * img)
+
+    cv.imshow('final_img', final_img)
     cv.waitKey(0)
+
+    return final_img
 
 if __name__ == "__main__":
     mean_background_hsv = create_background_model(os.path.abspath(os.path.join(get_cam_dir(1), "background.avi")))
-    print(mean_background_hsv.shape)
     img = get_foreground_image(os.path.abspath(os.path.join(get_cam_dir(1), "video.avi")))
-    substract_background(mean_background_hsv, img)
+    new_img = substract_background(mean_background_hsv, img)
