@@ -119,8 +119,9 @@ def perspective_transform(img):
 
 def interpolate_chessboard_with_perspective(img, pattern_size, **kwargs):
     res, mtx = perspective_transform(img)
-    ret, corners = interpolate_chessboard(res, pattern_size, **kwargs)
-    print(corners)
+    ret, corners = find_chessboard_corners(img, pattern_size, improve=False)
+    if not ret:
+        ret, corners = interpolate_chessboard(res, pattern_size, **kwargs)
 
     cv.drawChessboardCorners(res, pattern_size, corners, True)
     cv.imshow("transformed", res)

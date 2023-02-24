@@ -7,7 +7,7 @@ import os
 import cv2 as cv
 import numpy as np
 
-from config import get_cam_dir, CHESS_DIMS
+from config import get_cam_dir, CHESS_DIMS, STRIDE_LEN
 from util import interpolate_chessboard, sample_files, interpolate_chessboard_with_perspective
 from online import load_internal_calibrations, draw
 
@@ -70,7 +70,7 @@ def calibrate_camera(num, n_images, pattern_size, frame_dirname="frames", **kwar
     file_paths = os.path.join("data", f"cam{num}", frame_dirname)
     cam_dir = get_cam_dir(num)
     files = sample_files(file_paths, n_images)
-    _, mtx, dist, _, _ = calibrate(files, pattern_size, 1, **kwargs)
+    _, mtx, dist, _, _ = calibrate(files, pattern_size, STRIDE_LEN, **kwargs)
     calib_path = os.path.join(cam_dir, "calibration")
     if not os.path.exists(calib_path):
         os.mkdir(calib_path)
@@ -115,43 +115,60 @@ def calibrate_all(n_calibration, pattern_size, manual_interpolate, show_live, fr
             sample_video_and_calibrate(camera_num, n_sample, n_calibration,
                                        pattern_size, manual_interpolate, show_live=show_live)
         else:
-            calibrate_camera(camera_num, n_calibration, pattern_size, frame_dirname=frame_dirname)
+            calibrate_camera(camera_num, n_calibration, pattern_size, frame_dirname=frame_dirname, show_live=show_live)
+
+
+def get_extrinsics(img, mtx, dist, pattern_size, stride_len, corners):
+
+    objp = np.zeros((pattern_size[0]*pattern_size[1], 3), np.float32)
+    objp[:, :2] = np.mgrid[0:pattern_size[0],
+                           0:pattern_size[1]].T.reshape(-1, 2) * stride_len
+
+    # Find the rotation and translation vectors.
+    ret, rvec, tvec = cv.solvePnP(objp, corners, mtx, dist, useExtrinsicGuess=False)
+    if ret:
+
+        return rvec, tvec
+
+def save_extrinsics(num, rvec, tvec):
+    cam_dir = get_cam_dir(num)
+    calib_path = os.path.join(cam_dir, "calibration")
+    if not os.path.exists(calib_path):
+        os.mkdir(calib_path)
+    np.save(os.path.join(calib_path, "rvec"), rvec)
+    np.save(os.path.join(calib_path, "tvec"), tvec)
+
+
+def draw_axes(img, mtx, dist, rvec, tvec, corners, stride_len):
+    axes = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, -1]]
+                      ).reshape(-1, 3) * stride_len * 4
+    axes_points, jac2 = cv.projectPoints(axes, rvec, tvec, mtx, dist)
+
+    corners = np.int32(corners).reshape(-1, 2)
+    imgpts = np.int32(axes_points).reshape(-1, 2)
+
+    corner = tuple(corners[0].ravel())
+
+    img = cv.line(img, corner, tuple(imgpts[0].ravel()), (0, 0, 255), 2)
+    img = cv.line(img, corner, tuple(imgpts[1].ravel()), (0, 255, 0), 2)
+    img = cv.line(img, corner, tuple(imgpts[2].ravel()), (255, 0, 0), 2)
+    return img
+
+
 
 
 
 if __name__ == "__main__":
-    # calibrate_all(40, CHESS_DIMS, False, False)
-    # mtx, dist = res[1:3]
-    video = cv.VideoCapture(os.path.join(
-        "data", "cam1", "checkerboard.avi"))
-    img = [frame for frame in frames(video, 1)][0]
-    res, corners2 = interpolate_chessboard_with_perspective(img, CHESS_DIMS, window_size=(2, 2))
-    cv.drawChessboardCorners(img, CHESS_DIMS, corners2, True)
+    # calibrate_all(25, CHESS_DIMS, False, True)
+    # # mtx, dist = res[1:3]
+    for cam_num in [1, 2, 3, 4]:
+        video = cv.VideoCapture(os.path.join(
+            "data", f"cam{cam_num}", "checkerboard.avi"))
+        img = [frame for frame in frames(video, 1)][0]
+        res, corners = interpolate_chessboard_with_perspective(img, CHESS_DIMS, window_size=(2, 2))
 
-
-    # mtx, dist = load_internal_calibrations(1)
-    # img, error = draw(img, mtx, dist, CHESS_DIMS, 1, corners=corners2, include_error=True)
-    cv.imshow("original", img)
-    cv.waitKey(0)
-
-    #
-    # scale_percent = 200  # percent of original size
-    # width = int(img.shape[1] * scale_percent / 100)
-    # height = int(img.shape[0] * scale_percent / 100)
-    # dim = (width, height)
-    #
-    # resized = cv.resize(img, dim, interpolation=cv.INTER_LANCZOS4)
-    # _, corners = interpolate_chessboard(
-    #     resized, CHESS_DIMS, window_size=(3, 3))
-    #
-    # corners = corners / (scale_percent / 100)
-    # temp = img.copy()
-    # cv.drawChessboardCorners(temp, CHESS_DIMS, corners, True)
-    # cv.imshow('img', temp)
-    # cv.waitKey(0)
-    #
-    # output, error = draw(img, mtx, dist, CHESS_DIMS, 1,
-    #                      corners=corners, include_error=False)
-    #
-    # cv.imshow('img', output)
-    # cv.waitKey(0)
+        mtx, dist = load_internal_calibrations(cam_num)
+        rvec, tvec = get_extrinsics(img, mtx, dist, CHESS_DIMS, STRIDE_LEN, corners)
+        img_w_axes = draw_axes(img, mtx, dist, rvec, tvec, corners, STRIDE_LEN)
+        cv.imshow("chessboard with axes", img_w_axes)
+        cv.waitKey(0)

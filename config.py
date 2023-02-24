@@ -4,6 +4,8 @@ import os
 DATA_DIR = "data"
 CAM_DIR = "cam{}"
 NUM_CAMS = 4
+
+STRIDE_LEN = 115
 CHESS_DIMS = (8, 6)
 
 def get_cam_dir(num):

@@ -60,7 +60,7 @@ def draw(img, mtx, dist, pattern_size, stride_len, corners = None, include_error
         return img, error
 
     # Initialize criteria for SubPix module
-    criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    # criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
     AXIS_UNIT_SIZE = 5
     # Create axis and object points
@@ -78,10 +78,10 @@ def draw(img, mtx, dist, pattern_size, stride_len, corners = None, include_error
                            0:pattern_size[1]].T.reshape(-1, 2) * stride_len
 
     # Find better corners with SubPix module
-    corners = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+    # corners = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
 
     # Find the rotation and translation vectors.
-    ret, rvecs, tvecs = cv.solvePnP(objp, corners, mtx, dist)
+    ret, rvecs, tvecs = cv.solvePnP(objp, corners, mtx, dist, useExtrinsicGuess=False, flags=(cv.SOLVEPNP_ITERATIVE))
 
     # Project 3D points to image plane for cube
     imgpts, jac = cv.projectPoints(cube_lines, rvecs, tvecs, mtx, dist)
