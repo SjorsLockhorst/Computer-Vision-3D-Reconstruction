@@ -60,17 +60,17 @@ def sample_video_and_calibrate(num, n_samples, n_calibration, pattern_size, manu
     vid_path = os.path.join(cam_dir, "intrinsics.avi")
     detect_and_save_frames(vid_path, pattern_size, n_samples,
                            manual_interpolate, output_dirname=frame_dirname, **kwargs)
-    mtx, dist = calibrate_camera(
+    mtx, dist = calibrate_camera_intrinsics(
         num, n_calibration, pattern_size, frame_dirname=frame_dirname, **kwargs)
     return mtx, dist
 
 
-def calibrate_camera(num, n_images, pattern_size, frame_dirname="frames", **kwargs):
+def calibrate_camera_intrinsics(num, n_images, pattern_size, frame_dirname="frames", **kwargs):
     """Calibrate a specific camera."""
     file_paths = os.path.join("data", f"cam{num}", frame_dirname)
     cam_dir = get_cam_dir(num)
     files = sample_files(file_paths, n_images)
-    _, mtx, dist, _, _ = calibrate(files, pattern_size, STRIDE_LEN, **kwargs)
+    _, mtx, dist, _, _ = calibrate_intrinsics(files, pattern_size, STRIDE_LEN, **kwargs)
     calib_path = os.path.join(cam_dir, "calibration")
     if not os.path.exists(calib_path):
         os.mkdir(calib_path)
@@ -79,7 +79,7 @@ def calibrate_camera(num, n_images, pattern_size, frame_dirname="frames", **kwar
     return mtx, dist
 
 
-def calibrate(image_paths, pattern_size, checker_size, show_live=False):
+def calibrate_intrinsics(image_paths, pattern_size, checker_size, show_live=False):
     """Calibrate from images at certain paths."""
     imgpoints = []
     objectpoints = []
@@ -115,14 +115,18 @@ def calibrate_all(n_calibration, pattern_size, manual_interpolate, show_live, fr
             sample_video_and_calibrate(camera_num, n_sample, n_calibration,
                                        pattern_size, manual_interpolate, show_live=show_live)
         else:
-            calibrate_camera(camera_num, n_calibration, pattern_size, frame_dirname=frame_dirname, show_live=show_live)
+            calibrate_camera_intrinsics(camera_num, n_calibration, pattern_size, frame_dirname=frame_dirname, show_live=show_live)
 
 
-def get_extrinsics(img, mtx, dist, pattern_size, stride_len, corners):
-
+def get_chessboard_obj_points(pattern_size, stride_len):
     objp = np.zeros((pattern_size[0]*pattern_size[1], 3), np.float32)
     objp[:, :2] = np.mgrid[0:pattern_size[0],
                            0:pattern_size[1]].T.reshape(-1, 2) * stride_len
+    return objp
+
+def get_extrinsics(img, mtx, dist, pattern_size, stride_len, corners):
+
+    objp = get_chessboard_obj_points(pattern_size, stride_len)
 
     # Find the rotation and translation vectors.
     ret, rvec, tvec = cv.solvePnP(objp, corners, mtx, dist, useExtrinsicGuess=False)
@@ -138,8 +142,45 @@ def save_extrinsics(num, rvec, tvec):
     np.save(os.path.join(calib_path, "rvec"), rvec)
     np.save(os.path.join(calib_path, "tvec"), tvec)
 
+def load_all_calibration(num):
+    cam_dir = get_cam_dir(num)
+    calib_path = os.path.join(cam_dir, "calibration")
+    mtx = np.load(os.path.join(calib_path, "mtx.npy"), allow_pickle=True)
+    dist = np.load(os.path.join(calib_path, "dist.npy"), allow_pickle=True)
+    rvec = np.load(os.path.join(calib_path, "rvec.npy"), allow_pickle=True)
+    tvec = np.load(os.path.join(calib_path, "tvec.npy"), allow_pickle=True)
+    return mtx, dist, rvec, tvec
 
-def draw_axes(img, mtx, dist, rvec, tvec, corners, stride_len):
+
+def calibrate_extrinsics(num, img, mtx, dist, pattern_size, stride_len, corners):
+    rvec, tvec = get_extrinsics(img, mtx, dist, pattern_size, stride_len, corners)
+    save_extrinsics(num, rvec, tvec)
+    return rvec, tvec
+
+def get_extrinsic_calibration_img(num):
+    video = cv.VideoCapture(os.path.join(
+        "data", f"cam{cam_num}", "checkerboard.avi"))
+    return [frame for frame in frames(video, 1)][0]
+
+
+def calibrate_intrinsics_and_extrinsices(num, n_images, pattern_size, stride_len, frame_dirname="frames", n_samples=None):
+    WINDOW_SIZE = (2, 2)
+    if n_samples is not None:
+        cam_dir = get_cam_dir(num)
+        vid_path = os.path.join(cam_dir, "intrinsics.avi")
+        detect_and_save_frames(vid_path, pattern_size, n_samples, False, output_dirname=frame_dirname)
+
+    mtx, dist = calibrate_camera_intrinsics(num, n_images, pattern_size, frame_dirname=frame_dirname)
+    img = get_extrinsic_calibration_img(num)
+    res, corners = interpolate_chessboard_with_perspective(img, pattern_size, window_size=WINDOW_SIZE)
+    rvec, tvec = get_extrinsics(img, mtx, dist, pattern_size, stride_len, corners)
+    save_extrinsics(num, rvec, tvec)
+    return mtx, dist, rvec, tvec
+
+
+
+def draw_axes(img, stride_len, mtx, dist, rvec, tvec, corners):
+    drawn_img = img.copy()
     axes = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, -1]]
                       ).reshape(-1, 3) * stride_len * 4
     axes_points, jac2 = cv.projectPoints(axes, rvec, tvec, mtx, dist)
@@ -149,7 +190,7 @@ def draw_axes(img, mtx, dist, rvec, tvec, corners, stride_len):
 
     corner = tuple(corners[0].ravel())
 
-    img = cv.line(img, corner, tuple(imgpts[0].ravel()), (0, 0, 255), 2)
+    img = cv.line(drawn_img, corner, tuple(imgpts[0].ravel()), (0, 0, 255), 2)
     img = cv.line(img, corner, tuple(imgpts[1].ravel()), (0, 255, 0), 2)
     img = cv.line(img, corner, tuple(imgpts[2].ravel()), (255, 0, 0), 2)
     return img
@@ -161,14 +202,13 @@ def draw_axes(img, mtx, dist, rvec, tvec, corners, stride_len):
 if __name__ == "__main__":
     # calibrate_all(25, CHESS_DIMS, False, True)
     # # mtx, dist = res[1:3]
-    for cam_num in [1, 2, 3, 4]:
-        video = cv.VideoCapture(os.path.join(
-            "data", f"cam{cam_num}", "checkerboard.avi"))
-        img = [frame for frame in frames(video, 1)][0]
-        res, corners = interpolate_chessboard_with_perspective(img, CHESS_DIMS, window_size=(2, 2))
-
-        mtx, dist = load_internal_calibrations(cam_num)
-        rvec, tvec = get_extrinsics(img, mtx, dist, CHESS_DIMS, STRIDE_LEN, corners)
-        img_w_axes = draw_axes(img, mtx, dist, rvec, tvec, corners, STRIDE_LEN)
-        cv.imshow("chessboard with axes", img_w_axes)
-        cv.waitKey(0)
+    # for cam_num in [1, 2, 3, 4]:
+    cam_num=3
+    calibrate_intrinsics_and_extrinsices(cam_num, 25, CHESS_DIMS, STRIDE_LEN)
+    mtx, dist, rvec, tvec = load_all_calibration(cam_num)
+    img = get_extrinsic_calibration_img(cam_num)
+    objpoints = get_chessboard_obj_points(CHESS_DIMS, STRIDE_LEN)
+    corners, _ = cv.projectPoints(objpoints, rvec, tvec, mtx, dist)
+    drawn = draw_axes(img, STRIDE_LEN, mtx, dist, rvec, tvec, corners)
+    cv.imshow("With axes", drawn)
+    cv.waitKey(0)
