@@ -202,13 +202,12 @@ def draw_axes(img, stride_len, mtx, dist, rvec, tvec, corners):
 if __name__ == "__main__":
     # calibrate_all(25, CHESS_DIMS, False, True)
     # # mtx, dist = res[1:3]
-    # for cam_num in [1, 2, 3, 4]:
-    cam_num=3
-    calibrate_intrinsics_and_extrinsices(cam_num, 25, CHESS_DIMS, STRIDE_LEN)
-    mtx, dist, rvec, tvec = load_all_calibration(cam_num)
-    img = get_extrinsic_calibration_img(cam_num)
-    objpoints = get_chessboard_obj_points(CHESS_DIMS, STRIDE_LEN)
-    corners, _ = cv.projectPoints(objpoints, rvec, tvec, mtx, dist)
-    drawn = draw_axes(img, STRIDE_LEN, mtx, dist, rvec, tvec, corners)
-    cv.imshow("With axes", drawn)
-    cv.waitKey(0)
+    for cam_num in [1, 2, 3, 4]:
+        calibrate_intrinsics_and_extrinsices(cam_num, 25, CHESS_DIMS, STRIDE_LEN)
+        mtx, dist, rvec, tvec = load_all_calibration(cam_num)
+        img = get_extrinsic_calibration_img(cam_num)
+        objpoints = get_chessboard_obj_points(CHESS_DIMS, STRIDE_LEN)
+        corners, _ = cv.projectPoints(objpoints, rvec, tvec, mtx, dist)
+        drawn = draw_axes(img, STRIDE_LEN, mtx, dist, rvec, tvec, corners)
+        cv.imshow("With axes", drawn)
+        cv.waitKey(0)
