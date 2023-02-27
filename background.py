@@ -14,11 +14,14 @@ def frames(video_path):
         if ret:
             yield frame
 
-def get__first_foreground_frame(video_path):
+def get_first_foreground_frame(video_path):
     for frame in frames(video_path):
         return frame
 
-def create_background_model(video_path):
+def create_background_model(cam_num):
+    cam_dir = get_cam_dir(cam_num)
+    video_path = os.path.abspath(os.path.join(cam_dir, "background.avi"))
+    calib_dir = os.path.abspath(os.path.join(cam_dir, "calibration"))
     frames_list = []
     for frame in frames(video_path):
         # Set to HSV
@@ -26,47 +29,51 @@ def create_background_model(video_path):
         frames_list.append(hsv)
     frames_list = np.array(frames_list)
     mean_background_hsv = np.mean(frames_list, axis=0)
-    print(mean_background_hsv.shape)
+    np.save(os.path.join(calib_dir, "background"), mean_background_hsv)
     return mean_background_hsv
 
-def substract_background(background_path, foreground_path):
+def load_background_model(cam_num):
+    cam_dir = get_cam_dir(cam_num)
+    backgound_model_path = os.path.join(cam_dir, "calibration", "background.npy")
+    return np.load(backgound_model_path, allow_pickle=True)
 
-    mean_background_hsv = create_background_model(background_path)
-    img = get__first_foreground_frame(foreground_path)
+def substract_background(background_model, img, thresh_h, thresh_v, thresh_s, dilate = False, erode = False):
+
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-    hsv_diff = abs(hsv - mean_background_hsv)
+    hsv_diff = abs(hsv - background_model)
 
     # Create mask 
 
     # NOW IMPLEMENT HSV THRESHOLDS
 
     mask = np.zeros(hsv.shape)
-    print(mask.shape)
 
-    thresh_h = 20
-    thresh_s = 20
-    thresh_v = 20
 
     mask[:,:,0] = np.uint8(np.where(hsv_diff[:,:,0] > thresh_h, 1, 0))
     mask[:,:,1] = np.uint8(np.where(hsv_diff[:,:,1] > thresh_s, 1, 0))
     mask[:,:,2] = np.uint8(np.where(hsv_diff[:,:,2] > thresh_v, 1, 0))
 
-    mask_end = mask.all(axis=2)
+    full_mask = np.uint8(mask.all(axis=2)) * 255
 
     # Dilate mask
-    # kernel = np.ones((25,25), np.uint8)
-    # mask = cv.dilate(mask, kernel)
-    # kernel = np.ones((10,10), np.uint8)
-    # mask = cv.erode(mask, kernel)
+    if erode:
+        kernel = np.ones((1,2), np.uint8)
+        full_mask = cv.erode(full_mask, kernel)
+        kernel = np.ones((2,1), np.uint8)
+        full_mask = cv.erode(full_mask, kernel)
+    if dilate:
+        kernel = np.ones((2,8), np.uint8)
+        full_mask = cv.dilate(full_mask, kernel)
+        kernel = np.ones((8,2), np.uint8)
+        full_mask = cv.dilate(full_mask, kernel)
+        # kernel = np.ones((2,2), np.uint8)
+        # full_mask = cv.erode(full_mask, kernel)
 
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
-    background_removed = np.uint8(mask_end * gray)
+    background_removed = np.uint8(full_mask * gray)
 
-    cv.imshow('img', background_removed)
-    cv.waitKey(0)
-
-    return background_removed, mask_end
+    return background_removed, full_mask
 
 # CHANGE THE CODE BELOW THIS
 
@@ -122,7 +129,14 @@ def gaussian_background_model_hsv(background_path, foreground_path):
     cv.destroyAllWindows()
 
 if __name__ == "__main__":
-    create_background_model(os.path.abspath(os.path.join(get_cam_dir(1), "background.avi")))
-    a, b = substract_background(os.path.abspath(os.path.join(get_cam_dir(1), "background.avi")), os.path.abspath(os.path.join(get_cam_dir(1), "video.avi")))
-    print(b.shape)
+    H = 2
+    S = 8
+    V = 13
+    for cam in [1, 2, 3, 4]:
+        load = load_background_model(cam)
+        vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
+        ret, img = get_frame(vid, 0)
+        background_removed, mask = substract_background(load, img, 2, 8, 13, dilate=True, erode=True)
+        cv.imshow("cleaned", background_removed)
+        cv.waitKey(0)
     # gaussian_background_model_hsv(os.path.abspath(os.path.join(get_cam_dir(3), "background.avi")), os.path.abspath(os.path.join(get_cam_dir(3), "video.avi")))
