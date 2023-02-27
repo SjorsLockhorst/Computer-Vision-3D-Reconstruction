@@ -5,17 +5,17 @@ import time
 import cv2 as cv
 import numpy as np
 
-from config import DATA_DIR
+from config import DATA_DIR, get_cam_dir
 
 
-def load_internal_calibrations(experiment):
+def load_internal_calibrations(num):
     """Loads internal calibrations based on experiment number."""
-    load_path = os.path.join(DATA_DIR, "calibrations")
+    load_path = os.path.join(get_cam_dir(num), "calibration")
 
     mtx = np.load(os.path.join(
-        load_path, f"mtx_{experiment}.npy"), allow_pickle=True)
+        load_path, "mtx.npy"), allow_pickle=True)
     dist = np.load(os.path.join(
-        load_path, f"dist_{experiment}.npy"), allow_pickle=True)
+        load_path, "dist.npy"), allow_pickle=True)
     return mtx, dist
 
 
@@ -60,7 +60,7 @@ def draw(img, mtx, dist, pattern_size, stride_len, corners = None, include_error
         return img, error
 
     # Initialize criteria for SubPix module
-    criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    # criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
     AXIS_UNIT_SIZE = 5
     # Create axis and object points
@@ -78,10 +78,10 @@ def draw(img, mtx, dist, pattern_size, stride_len, corners = None, include_error
                            0:pattern_size[1]].T.reshape(-1, 2) * stride_len
 
     # Find better corners with SubPix module
-    corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+    # corners = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
 
     # Find the rotation and translation vectors.
-    ret, rvecs, tvecs = cv.solvePnP(objp, corners2, mtx, dist)
+    ret, rvecs, tvecs = cv.solvePnP(objp, corners, mtx, dist, useExtrinsicGuess=False, flags=(cv.SOLVEPNP_ITERATIVE))
 
     # Project 3D points to image plane for cube
     imgpts, jac = cv.projectPoints(cube_lines, rvecs, tvecs, mtx, dist)
@@ -90,13 +90,13 @@ def draw(img, mtx, dist, pattern_size, stride_len, corners = None, include_error
     imgpts2, jac2 = cv.projectPoints(axes, rvecs, tvecs, mtx, dist)
 
     # Draw in 2D
-    img = draw_cube(img, corners2, imgpts)
-    img = draw_axis_lines(img, corners2, imgpts2)
+    img = draw_cube(img, corners, imgpts)
+    img = draw_axis_lines(img, corners, imgpts2)
     # Optionally show the reprojection error, along with reprojected points
     if include_error:
         error, projected_corners = reprojection_error(
                 objp,
-                corners2,
+                corners,
                 rvecs,
                 tvecs,
                 mtx,
