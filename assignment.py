@@ -2,6 +2,12 @@ import glm
 import random
 import numpy as np
 
+import cv2 as cv
+
+from online import load_internal_calibrations
+
+mtx, dist, rvec, tvec = load_internal_calibrations(1)
+
 block_size = 1.0
 
 
@@ -27,9 +33,12 @@ def set_voxel_positions(width, height, depth):
     return data
 
 
-def get_cam_positions():
+def get_cam_positions(rvec, tvec):
     # Generates dummy camera locations at the 4 corners of the room
     # TODO: You need to input the estimated locations of the 4 cameras in the world coordinates.
+    # Calculate rotation matrix
+    rotM = cv.Rodrigues(rvec)[0]
+
     return [[-64 * block_size, 64 * block_size, 63 * block_size],
             [63 * block_size, 64 * block_size, 63 * block_size],
             [63 * block_size, 64 * block_size, -64 * block_size],
