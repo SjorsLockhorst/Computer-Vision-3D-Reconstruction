@@ -5,7 +5,7 @@ import time
 import cv2 as cv
 import numpy as np
 
-from config import DATA_DIR, get_cam_dir
+from config import DATA_DIR, CHESS_DIMS, STRIDE_LEN, get_cam_dir
 
 
 def load_internal_calibrations(num):
@@ -133,7 +133,7 @@ def draw_live(initial_calibration=1, include_error = True, average_error = False
         mtx, dist = calibration_map[calibration_num]
         if include_error:
             # img, new_err = draw(frame, mtx, dist, include_error=include_error)
-            img, new_err = draw(frame, mtx, dist, include_error=include_error)
+            img, new_err = draw(frame, mtx, dist, CHESS_DIMS, STRIDE_LEN, include_error=include_error)
             if new_err is not None:
                 if average_error:
                     error += 1/counter * (new_err - error)
@@ -146,7 +146,7 @@ def draw_live(initial_calibration=1, include_error = True, average_error = False
                            (img.shape[1] // 2, 100), font, 2, (0, 0, 255), 1)
 
         else:
-            img = draw(frame, mtx, dist, include_error=include_error)
+            img = draw(frame, mtx, dist, CHESS_DIMS, STRIDE_LEN, include_error=include_error)
         cv.imshow('Chessboard with axes and cube.', img)
         pressed_key = cv.waitKey(1) & 0xFF
         if pressed_key == ord('q'):
