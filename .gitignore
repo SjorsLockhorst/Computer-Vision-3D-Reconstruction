@@ -130,4 +130,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-data/
+data/cam*/frames/
+data/cam*/*.avi
+data/cam*/*.xml
+data/*.xml
