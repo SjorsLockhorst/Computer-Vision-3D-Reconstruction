@@ -6,8 +6,6 @@ import cv2 as cv
 
 from online import load_internal_calibrations
 
-mtx, dist, rvec, tvec = load_internal_calibrations(1)
-
 block_size = 1.0
 
 
@@ -33,16 +31,36 @@ def set_voxel_positions(width, height, depth):
     return data
 
 
-def get_cam_positions(rvec, tvec):
+def get_cam_positions():
     # Generates dummy camera locations at the 4 corners of the room
+    
     # TODO: You need to input the estimated locations of the 4 cameras in the world coordinates.
-    # Calculate rotation matrix
-    rotM = cv.Rodrigues(rvec)[0]
+    mtx1, dist1, rvec1, tvec1 = load_internal_calibrations(1)
+    mtx2, dist2, rvec2, tvec2 = load_internal_calibrations(2)
+    mtx3, dist3, rvec3, tvec3 = load_internal_calibrations(3)
+    mtx4, dist4, rvec4, tvec4 = load_internal_calibrations(4)
+    tvec1 = tvec1 / 115
+    tvec2 = tvec2 / 115
+    tvec3 = tvec3 / 115
+    tvec4 = tvec4 / 115
+    
+    # Calculate rotation matrix and camera position
+    rotM1 = cv.Rodrigues(rvec1)[0]
+    cameraPosition1 = -np.matrix(rotM1).T * np.matrix(tvec1)
+    
+    rotM2 = cv.Rodrigues(rvec2)[0]
+    cameraPosition2 = -np.matrix(rotM2).T * np.matrix(tvec2)
+    
+    rotM3 = cv.Rodrigues(rvec3)[0]
+    cameraPosition3 = -np.matrix(rotM3).T * np.matrix(tvec3)
+    
+    rotM4 = cv.Rodrigues(rvec4)[0]
+    cameraPosition4 = -np.matrix(rotM4).T * np.matrix(tvec4)
 
-    return [[-64 * block_size, 64 * block_size, 63 * block_size],
-            [63 * block_size, 64 * block_size, 63 * block_size],
-            [63 * block_size, 64 * block_size, -64 * block_size],
-            [-64 * block_size, 64 * block_size, -64 * block_size]]
+    return [[cameraPosition1[0] * block_size, abs(cameraPosition1[2]) * block_size, cameraPosition1[1] * block_size],
+            [cameraPosition2[0] * block_size, abs(cameraPosition2[2]) * block_size, cameraPosition2[1] * block_size],
+            [cameraPosition3[0] * block_size, abs(cameraPosition3[2]) * block_size, cameraPosition3[1] * block_size],
+            [cameraPosition4[0] * block_size, abs(cameraPosition4[2]) * block_size, cameraPosition4[1] * block_size]]
 
 
 def get_cam_rotation_matrices():
@@ -55,3 +73,6 @@ def get_cam_rotation_matrices():
         cam_rotations[c] = glm.rotate(cam_rotations[c], cam_angles[c][1] * np.pi / 180, [0, 1, 0])
         cam_rotations[c] = glm.rotate(cam_rotations[c], cam_angles[c][2] * np.pi / 180, [0, 0, 1])
     return cam_rotations
+
+if __name__ == "__main__":
+    get_cam_positions()
