@@ -59,19 +59,28 @@ def set_voxel_positions(width, height, depth):
     S = 8
     V = 13
     voxels_in_mask = []
-    # cam = 1
-    for cam in cams:
-        lookup_table = create_lookup_table(cam)
-        # print(lookup_table[(0, 0, 0)])
-        bg_model = load_background_model(cam)
-        vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
-        ret, img = get_frame(vid, 2)
-        mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
-        is_in_mask = in_mask(lookup_table.values(), mask)
-        voxels_in_mask.append(is_in_mask)
+    cam = 1
+    # for cam in cams:
+    lookup_table = create_lookup_table(cam)
 
-    voxels_to_draw = find_intersection_masks(*voxels_in_mask)
-    selected = np.array(list(lookup_table.keys()))[voxels_to_draw]
+    # print(lookup_table[(0, 0, 0)])
+
+    bg_model = load_background_model(cam)
+    vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
+    ret, img = get_frame(vid, 2)
+    mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
+    print(f"Camera {cam}")
+    print(mask.sum())
+    print(mask.max())
+    print(mask.min())
+    is_in_mask = in_mask(lookup_table.values(), mask)
+    print(is_in_mask.sum())
+    print(is_in_mask.max())
+    print(is_in_mask.min())
+    voxels_in_mask.append(is_in_mask)
+
+    # voxels_to_draw = find_intersection_masks(*voxels_in_mask)
+    selected = np.array(list(lookup_table.keys()))[is_in_mask]
     return [(x, z, y) for x, y, z in list(selected)]
 
 
@@ -127,6 +136,3 @@ def find_intersection_masks(mask1, mask2, mask3, mask4):
 
 if __name__ == "__main__":
     pass
-
-
-    # get_cam_rotation_matrices()
