@@ -53,7 +53,7 @@ def substract_background(background_model, img, thresh_h, thresh_v, thresh_s, di
     mask[:,:,1] = np.uint8(np.where(hsv_diff[:,:,1] > thresh_s, 1, 0))
     mask[:,:,2] = np.uint8(np.where(hsv_diff[:,:,2] > thresh_v, 1, 0))
 
-    full_mask = np.uint8(mask.all(axis=2)) * 255
+    full_mask = np.uint8(mask.all(axis=2))
 
     # Dilate mask
     if erode:
