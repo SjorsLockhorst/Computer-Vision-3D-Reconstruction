@@ -196,6 +196,19 @@ def draw_axes(img, stride_len, mtx, dist, rvec, tvec, corners):
     return img
 
 
+def draw_axes_from_zero(img, stride_len, mtx, dist, rvec, tvec, corner):
+    drawn_img = img.copy()
+    axes = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, -1]]
+                      ).reshape(-1, 3) * stride_len * 4
+    axes_points, jac2 = cv.projectPoints(axes, rvec, tvec, mtx, dist)
+
+    imgpts = np.int32(axes_points).reshape(-1, 2)
+
+    img = cv.line(drawn_img, corner, tuple(imgpts[0].ravel()), (0, 0, 255), 2)
+    img = cv.line(img, corner, tuple(imgpts[1].ravel()), (0, 255, 0), 2)
+    img = cv.line(img, corner, tuple(imgpts[2].ravel()), (255, 0, 0), 2)
+    return img
+
 
 
 

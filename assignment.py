@@ -7,11 +7,11 @@ import cv2 as cv
 
 from online import load_internal_calibrations, load_external_calibrations
 from background import load_background_model, substract_background
-from calibration import get_frame
-from config import get_cam_dir
+from calibration import get_frame, draw_axes_from_zero
+from config import get_cam_dir, STRIDE_LEN
 
 block_size = 1.0
-scale = 2
+scale = 4
 
 
 def generate_grid(width, depth):
@@ -31,16 +31,17 @@ def create_lookup_table(cam_num):
     size_x = 32
     size_y = 32
     size_z = 64
-    scale_factor = 115 / scale 
-    voxel_block = np.zeros((32 * 32 * 64, 3))
+    scale_factor = STRIDE_LEN / scale 
+    voxel_block = np.zeros((size_x * size_y * size_z, 3))
 
     counter = 0
     for x in range(size_x):
         for y in range(size_y):
-            for z in range(size_z):
-                voxel_block[counter] = [x, z, y]
+            for z in range(-size_z, 0, 1):
+                voxel_block[counter] = [x, y, z]
                 counter += 1
 
+    print(counter)
     scaled_voxels = voxel_block * scale_factor
 
     coords = cv.projectPoints(scaled_voxels, rvec, tvec, mtx, dist)[0]
@@ -50,7 +51,36 @@ def create_lookup_table(cam_num):
         lookup_table[tuple(scaled_back_voxel.astype(int))] = img_coord.astype(int)
     return lookup_table
 
-    #     break
+
+def draw_axes_on_image(cam_num, frame_id):
+    point = (0,0,0)
+    mtx, dist = load_internal_calibrations(cam_num)
+    rvec, tvec = load_external_calibrations(cam_num)
+    coords = cv.projectPoints(point, rvec, tvec, mtx, dist)[0].astype(int)
+    vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam_num), "video.avi")))
+    ret, img = get_frame(vid, frame_id)
+    x_img, y_img = coords[0][0]
+    return draw_axes_from_zero(img, STRIDE_LEN, mtx, dist, rvec, tvec, (x_img, y_img))
+
+
+def plot_projection(cam_num, point):
+    # H = 2
+    # S = 8
+    # V = 13
+    rescaled_point = tuple(map(lambda x: x * STRIDE_LEN / scale, point))
+    print(rescaled_point)
+    mtx, dist = load_internal_calibrations(cam_num)
+    rvec, tvec = load_external_calibrations(cam_num)
+    coords = cv.projectPoints(rescaled_point, rvec, tvec, mtx, dist)[0].astype(int)
+    vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam_num), "video.avi")))
+    ret, img = get_frame(vid, 2)
+    # bg_model = load_background_model(cam_num)
+    # mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
+    x_img, y_img = coords[0][0]
+    img = draw_axes_on_image(cam_num, 2)
+    img[y_img: y_img+ 10,x_img: x_img+ 10 ] = 255
+    cv.imshow("test", img)
+    cv.waitKey(0)
 
 
 def set_voxel_positions(width, height, depth):
@@ -59,29 +89,28 @@ def set_voxel_positions(width, height, depth):
     S = 8
     V = 13
     voxels_in_mask = []
-    cam = 1
-    # for cam in cams:
-    lookup_table = create_lookup_table(cam)
+    for cam in cams:
+        lookup_table = create_lookup_table(cam)
 
-    # print(lookup_table[(0, 0, 0)])
+        # print(lookup_table[(0, 0, 0)])
 
-    bg_model = load_background_model(cam)
-    vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
-    ret, img = get_frame(vid, 2)
-    mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
-    print(f"Camera {cam}")
-    print(mask.sum())
-    print(mask.max())
-    print(mask.min())
-    is_in_mask = in_mask(lookup_table.values(), mask)
-    print(is_in_mask.sum())
-    print(is_in_mask.max())
-    print(is_in_mask.min())
-    voxels_in_mask.append(is_in_mask)
+        bg_model = load_background_model(cam)
+        vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
+        ret, img = get_frame(vid, 2)
+        mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
+        print(f"Camera {cam}")
+        print(mask.sum())
+        print(mask.max())
+        print(mask.min())
+        is_in_mask = in_mask(lookup_table.values(), mask)
+        print(is_in_mask.sum())
+        print(is_in_mask.max())
+        print(is_in_mask.min())
+        voxels_in_mask.append(is_in_mask)
 
-    # voxels_to_draw = find_intersection_masks(*voxels_in_mask)
-    selected = np.array(list(lookup_table.keys()))[is_in_mask]
-    return [(x, z, y) for x, y, z in list(selected)]
+    voxels_to_draw = find_intersection_masks(*voxels_in_mask)
+    selected = np.array(list(lookup_table.keys()))[voxels_to_draw]
+    return [(x, -1 * z, y) for x, y, z in list(selected)]
 
 
 def get_cam_positions():
@@ -91,7 +120,7 @@ def get_cam_positions():
     cam_positions = []
     for cam in cams:
         rvec, tvec = load_external_calibrations(cam)
-        tvec /= 115 / scale
+        tvec /= STRIDE_LEN / scale
         # Calculate rotation matrix and camera position
         rot_mat = cv.Rodrigues(rvec)[0]
         cam_pos = -np.matrix(rot_mat).T * np.matrix(tvec)
@@ -124,7 +153,7 @@ def in_mask(coordinates, mask):
     coordinates_in_mask = []
     for x,y in coordinates:
         try:
-            coordinates_in_mask.append(mask[x][y] == 1)
+            coordinates_in_mask.append(mask[y][x] == 1)
         except IndexError:
             coordinates_in_mask.append(False)
     coordinates_in_mask = np.array(coordinates_in_mask)
@@ -135,4 +164,5 @@ def find_intersection_masks(mask1, mask2, mask3, mask4):
 
 
 if __name__ == "__main__":
-    pass
+    for i in [1, 2, 3, 4]:
+        plot_projection(i, (32, 32, -64))
