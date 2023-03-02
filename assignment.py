@@ -57,22 +57,42 @@ def get_cam_positions():
     rotM4 = cv.Rodrigues(rvec4)[0]
     cameraPosition4 = -np.matrix(rotM4).T * np.matrix(tvec4)
 
-    return [[cameraPosition1[0] * block_size, abs(cameraPosition1[2]) * block_size, cameraPosition1[1] * block_size],
-            [cameraPosition2[0] * block_size, abs(cameraPosition2[2]) * block_size, cameraPosition2[1] * block_size],
-            [cameraPosition3[0] * block_size, abs(cameraPosition3[2]) * block_size, cameraPosition3[1] * block_size],
-            [cameraPosition4[0] * block_size, abs(cameraPosition4[2]) * block_size, cameraPosition4[1] * block_size]]
+    return [[cameraPosition1[0] * block_size, -1 * cameraPosition1[2] * block_size, cameraPosition1[1] * block_size],
+            [cameraPosition2[0] * block_size, -1 * cameraPosition2[2] * block_size, cameraPosition2[1] * block_size],
+            [cameraPosition3[0] * block_size, -1 * cameraPosition3[2] * block_size, cameraPosition3[1] * block_size],
+            [cameraPosition4[0] * block_size, -1 * cameraPosition4[2] * block_size, cameraPosition4[1] * block_size]]
 
 
 def get_cam_rotation_matrices():
     # Generates dummy camera rotation matrices, looking down 45 degrees towards the center of the room
     # TODO: You need to input the estimated camera rotation matrices (4x4) of the 4 cameras in the world coordinates.
-    cam_angles = [[0, 45, -45], [0, 135, -45], [0, 225, -45], [0, 315, -45]]
-    cam_rotations = [glm.mat4(1), glm.mat4(1), glm.mat4(1), glm.mat4(1)]
-    for c in range(len(cam_rotations)):
-        cam_rotations[c] = glm.rotate(cam_rotations[c], cam_angles[c][0] * np.pi / 180, [1, 0, 0])
-        cam_rotations[c] = glm.rotate(cam_rotations[c], cam_angles[c][1] * np.pi / 180, [0, 1, 0])
-        cam_rotations[c] = glm.rotate(cam_rotations[c], cam_angles[c][2] * np.pi / 180, [0, 0, 1])
-    return cam_rotations
+    # cam_angles = [[0, 45, -45], [0, 135, -45], [0, 225, -45], [0, 315, -45]]
+    # cam_rotations = [glm.mat4(1), glm.mat4(1), glm.mat4(1), glm.mat4(1)]
+    # for c in range(len(cam_rotations)):
+    #     cam_rotations[c] = glm.rotate(cam_rotations[c], cam_angles[c][0] * np.pi / 180, [1, 0, 0])
+    #     cam_rotations[c] = glm.rotate(cam_rotations[c], cam_angles[c][1] * np.pi / 180, [0, 1, 0])
+    #     cam_rotations[c] = glm.rotate(cam_rotations[c], cam_angles[c][2] * np.pi / 180, [0, 0, 1])
+    # print(cam_rotations)
+    # return cam_rotations
+
+    cams = [1, 2, 3, 4]
+    cam_angles = []
+    for i in cams:
+        _, _, rvec, tvec = load_internal_calibrations(i)
+        rot_m = cv.Rodrigues(rvec)[0]
+        with_zeros = np.pad(rot_m, ((0, 1), (0, 1)))
+        with_zeros[with_zeros.shape[0] - 1, with_zeros.shape[1] - 1] = 1
+        
+
+        rotation = glm.mat4(with_zeros)
+        for idx, val in enumerate(np.squeeze(tvec)):
+            rotation[idx, 3] = val
+
+        rotation = glm.rotate(rotation, glm.radians(90), (0, 0, 1))
+        cam_angles.append(rotation)
+
+    print(cam_angles)
+    return cam_angles
 
 if __name__ == "__main__":
-    get_cam_positions()
+    get_cam_rotation_matrices()
