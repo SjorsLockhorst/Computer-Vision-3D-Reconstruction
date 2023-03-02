@@ -94,5 +94,16 @@ def get_cam_rotation_matrices():
     print(cam_angles)
     return cam_angles
 
+def in_mask(coordinates, mask):
+    coordinates_in_mask = []
+    for x,y in coordinates:
+        coordinates_in_mask.append(mask[x][y] == 1)
+    coordinates_in_mask = np.array(coordinates_in_mask)
+    return coordinates_in_mask
+
+def find_intersection_masks(mask1, mask2, mask3, mask4):
+    return mask1 == mask2 == mask3 == mask4
+
+
 if __name__ == "__main__":
     get_cam_rotation_matrices()
