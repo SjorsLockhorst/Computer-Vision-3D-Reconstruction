@@ -67,8 +67,8 @@ def sample_video_and_calibrate(num, n_samples, n_calibration, pattern_size, manu
 
 def calibrate_camera_intrinsics(num, n_images, pattern_size, frame_dirname="frames", **kwargs):
     """Calibrate a specific camera."""
-    file_paths = os.path.join("data", f"cam{num}", frame_dirname)
     cam_dir = get_cam_dir(num)
+    file_paths = os.path.join(cam_dir, frame_dirname)
     files = sample_files(file_paths, n_images)
     _, mtx, dist, _, _ = calibrate_intrinsics(files, pattern_size, STRIDE_LEN, **kwargs)
     calib_path = os.path.join(cam_dir, "calibration")
@@ -167,7 +167,7 @@ def calibrate_intrinsics_and_extrinsices(num, n_images, pattern_size, stride_len
     WINDOW_SIZE = (2, 2)
     if n_samples is not None:
         cam_dir = get_cam_dir(num)
-        vid_path = os.path.join(cam_dir, "intrinsics.avi")
+        vid_path = os.path.abspath(os.path.join(cam_dir, "intrinsics.avi"))
         detect_and_save_frames(vid_path, pattern_size, n_samples, False, output_dirname=frame_dirname)
 
     mtx, dist = calibrate_camera_intrinsics(num, n_images, pattern_size, frame_dirname=frame_dirname)
@@ -203,7 +203,7 @@ if __name__ == "__main__":
     # calibrate_all(25, CHESS_DIMS, False, True)
     # # mtx, dist = res[1:3]
     for cam_num in [1, 2, 3, 4]:
-        calibrate_intrinsics_and_extrinsices(cam_num, 25, CHESS_DIMS, STRIDE_LEN)
+        calibrate_intrinsics_and_extrinsices(cam_num, 25, CHESS_DIMS, STRIDE_LEN, n_samples=300)
         mtx, dist, rvec, tvec = load_all_calibration(cam_num)
         img = get_extrinsic_calibration_img(cam_num)
         objpoints = get_chessboard_obj_points(CHESS_DIMS, STRIDE_LEN)
