@@ -16,12 +16,17 @@ def load_internal_calibrations(num):
         load_path, "mtx.npy"), allow_pickle=True)
     dist = np.load(os.path.join(
         load_path, "dist.npy"), allow_pickle=True)
+    
+    return mtx, dist
+
+def load_external_calibrations(num):
+    load_path = os.path.join(get_cam_dir(num), "calibration")
     rvec = np.load(os.path.join(
         load_path, "rvec.npy"), allow_pickle=True)
     tvec = np.load(os.path.join(
         load_path, "tvec.npy"), allow_pickle=True)
-    
-    return mtx, dist, rvec, tvec
+    return rvec, tvec
+
 
 
 def draw_axis_lines(img, corners, imgpts):
