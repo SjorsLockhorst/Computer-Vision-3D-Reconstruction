@@ -37,11 +37,10 @@ def create_lookup_table(cam_num):
     counter = 0
     for x in range(size_x):
         for y in range(size_y):
-            for z in range(-size_z, 0, 1):
-                voxel_block[counter] = [x, y, z]
+            for z in range(size_z):
+                voxel_block[counter] = [x, y, -z]
                 counter += 1
 
-    print(counter)
     scaled_voxels = voxel_block * scale_factor
 
     coords = cv.projectPoints(scaled_voxels, rvec, tvec, mtx, dist)[0]
@@ -64,18 +63,12 @@ def draw_axes_on_image(cam_num, frame_id):
 
 
 def plot_projection(cam_num, point):
-    # H = 2
-    # S = 8
-    # V = 13
     rescaled_point = tuple(map(lambda x: x * STRIDE_LEN / scale, point))
-    print(rescaled_point)
     mtx, dist = load_internal_calibrations(cam_num)
     rvec, tvec = load_external_calibrations(cam_num)
     coords = cv.projectPoints(rescaled_point, rvec, tvec, mtx, dist)[0].astype(int)
     vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam_num), "video.avi")))
     ret, img = get_frame(vid, 2)
-    # bg_model = load_background_model(cam_num)
-    # mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
     x_img, y_img = coords[0][0]
     img = draw_axes_on_image(cam_num, 2)
     img[y_img: y_img+ 10,x_img: x_img+ 10 ] = 255
@@ -92,20 +85,11 @@ def set_voxel_positions(width, height, depth):
     for cam in cams:
         lookup_table = create_lookup_table(cam)
 
-        # print(lookup_table[(0, 0, 0)])
-
         bg_model = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
         ret, img = get_frame(vid, 2)
         mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
-        print(f"Camera {cam}")
-        print(mask.sum())
-        print(mask.max())
-        print(mask.min())
         is_in_mask = in_mask(lookup_table.values(), mask)
-        print(is_in_mask.sum())
-        print(is_in_mask.max())
-        print(is_in_mask.min())
         voxels_in_mask.append(is_in_mask)
 
     voxels_to_draw = find_intersection_masks(*voxels_in_mask)
@@ -165,4 +149,4 @@ def find_intersection_masks(mask1, mask2, mask3, mask4):
 
 if __name__ == "__main__":
     for i in [1, 2, 3, 4]:
-        plot_projection(i, (32, 32, -64))
+        plot_projection(i, (0, 0, -10))

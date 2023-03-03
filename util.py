@@ -109,19 +109,23 @@ def click_corners(img):
     return corners
 
 def perspective_transform(img):
-    corners1 = click_corners(img)
-    corners1  =  np.float32(corners1)
-    max_x, max_y = corners1.max(axis=0).astype(int)
-    pts2 = np.float32([[0, 0], [max_x, 0],
+    """Allow user to click 4 points, perspective transform to a rectangle."""
+    # Get four corners from user for perspective transform
+    corners = click_corners(img)
+    corners  =  np.float32(corners)
+    max_x, max_y = corners.max(axis=0).astype(int)
+    pts = np.float32([[0, 0], [max_x, 0],
                        [0, max_y], [max_x, max_y]])
-    mtx = cv.getPerspectiveTransform(corners1, pts2)
+    mtx = cv.getPerspectiveTransform(corners, pts)
     return cv.warpPerspective(img, mtx, (img.shape[0], img.shape[1])), mtx
 
 def interpolate_chessboard_with_perspective(img, pattern_size, **kwargs):
+    """
+    Transform chessboard perspective based on clicks of user, then interpolate 
+    corners.
+    """
     res, mtx = perspective_transform(img)
-    ret, corners = find_chessboard_corners(img, pattern_size, improve=False)
-    if not ret:
-        ret, corners = interpolate_chessboard(res, pattern_size, **kwargs)
+    ret, corners = interpolate_chessboard(res, pattern_size, **kwargs)
 
     cv.drawChessboardCorners(res, pattern_size, corners, True)
     cv.imshow("transformed", res)
