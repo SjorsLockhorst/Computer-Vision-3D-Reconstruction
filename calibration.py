@@ -9,7 +9,6 @@ import numpy as np
 
 import config
 
-from online import load_internal_calibrations
 from util import (
     interpolate_chessboard,
     interpolate_chessboard_with_perspective,
@@ -205,7 +204,7 @@ def calibrate_camera_extr(num, pattern_size, stride_len):
     """
     WINDOW_SIZE = (2, 2)  # Set window size for subpix function
 
-    mtx, dist = load_internal_calibrations(num)
+    mtx, dist = load_intr_calibration(num)
     img = get_extr_calibration_img(num)
     res, corners = interpolate_chessboard_with_perspective(
         img, pattern_size, window_size=WINDOW_SIZE)
@@ -233,6 +232,25 @@ def load_all_calibration(cam_num):
     rvec = np.load(os.path.join(calib_path, "rvec.npy"), allow_pickle=True)
     tvec = np.load(os.path.join(calib_path, "tvec.npy"), allow_pickle=True)
     return mtx, dist, rvec, tvec
+
+def load_intr_calibration(num):
+    """Loads internal calibrations based on experiment number."""
+    load_path = os.path.join(config.get_cam_dir(num), "calibration")
+
+    mtx = np.load(os.path.join(
+        load_path, "mtx.npy"), allow_pickle=True)
+    dist = np.load(os.path.join(
+        load_path, "dist.npy"), allow_pickle=True)
+    
+    return mtx, dist
+
+def load_extr_calibration(num):
+    load_path = os.path.join(config.get_cam_dir(num), "calibration")
+    rvec = np.load(os.path.join(
+        load_path, "rvec.npy"), allow_pickle=True)
+    tvec = np.load(os.path.join(
+        load_path, "tvec.npy"), allow_pickle=True)
+    return rvec, tvec
 
 
 def calibrate_and_save_extr(num, pattern_size, stride_len):
@@ -326,7 +344,7 @@ def calibrate():
             )
 
         if config.CALIB_EXTR:
-            mtx, dist = load_internal_calibrations(cam_num)
+            mtx, dist = load_intr_calibration(cam_num)
             rvec, tvec = calibrate_camera_extr(
                 cam_num, config.CHESS_DIMS, config.STRIDE_LEN)
             save_extrinsics(cam_num, rvec, tvec)

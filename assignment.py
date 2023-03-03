@@ -1,14 +1,17 @@
 import os
-import glm
-import numpy as np
-import itertools
 
 import cv2 as cv
+import glm
+import numpy as np
 
-from online import load_internal_calibrations, load_external_calibrations
 from background import load_background_model, substract_background
-from calibration import get_frame, draw_axes_from_zero
-from config import get_cam_dir, STRIDE_LEN
+from calibration import (
+    draw_axes_from_zero,
+    get_frame,
+    load_extr_calibration,
+    load_intr_calibration,
+)
+from config import STRIDE_LEN, get_cam_dir
 
 block_size = 1.0
 scale = 4
@@ -26,8 +29,8 @@ def generate_grid(width, depth):
 
 
 def create_lookup_table(cam_num):
-    mtx, dist = load_internal_calibrations(cam_num)
-    rvec, tvec = load_external_calibrations(cam_num)
+    mtx, dist = load_intr_calibration(cam_num)
+    rvec, tvec = load_extr_calibration(cam_num)
     size_x = 32
     size_y = 32
     size_z = 64
@@ -53,22 +56,22 @@ def create_lookup_table(cam_num):
 
 def draw_axes_on_image(cam_num, frame_id):
     point = (0,0,0)
-    mtx, dist = load_internal_calibrations(cam_num)
-    rvec, tvec = load_external_calibrations(cam_num)
+    mtx, dist = load_intr_calibration(cam_num)
+    rvec, tvec = load_extr_calibration(cam_num)
     coords = cv.projectPoints(point, rvec, tvec, mtx, dist)[0].astype(int)
     vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam_num), "video.avi")))
-    ret, img = get_frame(vid, frame_id)
+    img = get_frame(vid, frame_id)
     x_img, y_img = coords[0][0]
     return draw_axes_from_zero(img, STRIDE_LEN, mtx, dist, rvec, tvec, (x_img, y_img))
 
 
 def plot_projection(cam_num, point):
     rescaled_point = tuple(map(lambda x: x * STRIDE_LEN / scale, point))
-    mtx, dist = load_internal_calibrations(cam_num)
-    rvec, tvec = load_external_calibrations(cam_num)
+    mtx, dist = load_intr_calibration(cam_num)
+    rvec, tvec = load_extr_calibration(cam_num)
     coords = cv.projectPoints(rescaled_point, rvec, tvec, mtx, dist)[0].astype(int)
     vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam_num), "video.avi")))
-    ret, img = get_frame(vid, 2)
+    img = get_frame(vid, 2)
     x_img, y_img = coords[0][0]
     img = draw_axes_on_image(cam_num, 2)
     img[y_img: y_img+ 10,x_img: x_img+ 10 ] = 255
@@ -87,7 +90,7 @@ def set_voxel_positions(width, height, depth):
 
         bg_model = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
-        ret, img = get_frame(vid, 2)
+        img = get_frame(vid, 2)
         mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
         is_in_mask = in_mask(lookup_table.values(), mask)
         voxels_in_mask.append(is_in_mask)
@@ -103,7 +106,7 @@ def get_cam_positions():
     cams = [1, 2, 3, 4]
     cam_positions = []
     for cam in cams:
-        rvec, tvec = load_external_calibrations(cam)
+        rvec, tvec = load_extr_calibration(cam)
         tvec /= STRIDE_LEN / scale
         # Calculate rotation matrix and camera position
         rot_mat = cv.Rodrigues(rvec)[0]
@@ -119,7 +122,7 @@ def get_cam_rotation_matrices():
     cams = [1, 2, 3, 4]
     cam_angles = []
     for i in cams:
-        rvec, tvec = load_external_calibrations(i)
+        rvec, tvec = load_extr_calibration(i)
         rot_m = cv.Rodrigues(rvec)[0]
         with_zeros = np.pad(rot_m, ((0, 1), (0, 1)))
         with_zeros[with_zeros.shape[0] - 1, with_zeros.shape[1] - 1] = 1

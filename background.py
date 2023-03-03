@@ -1,9 +1,11 @@
 """ module that drops the background by comparing to a background model """
 
+import os
+
 import cv2 as cv
 import numpy as np
-import os
-from calibration import get_frame, frames
+
+from calibration import frames, get_frame
 from config import get_cam_dir
 
 
