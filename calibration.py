@@ -7,19 +7,8 @@ import os
 import cv2 as cv
 import numpy as np
 
-from config import (
-    CALIB_EXTR,
-    CALIB_INTR,
-    CAMERAS,
-    CHESS_DIMS,
-    MANUAL_INTERPOLATE_INTR,
-    N_CALIB,
-    N_SAMPLE,
-    PLOT_AXES,
-    SHOW_LIVE,
-    STRIDE_LEN,
-    get_cam_dir,
-)
+import config
+
 from online import load_internal_calibrations
 from util import (
     interpolate_chessboard,
@@ -96,7 +85,7 @@ def sample_video_and_calibrate_intr(
     Draw n frames uniformly from intrinsics video, calibrate intrinsics of camera 
     with subset using those samples.
     """
-    cam_dir = get_cam_dir(num)
+    cam_dir = config.get_cam_dir(num)
     vid_path = os.path.join(cam_dir, "intrinsics.avi")
     detect_and_save_frames(vid_path, pattern_size, n_samples,
                            manual_interpolate, output_dirname=frame_dirname, **kwargs)
@@ -113,13 +102,13 @@ def calibrate_camera_intr(
         **kwargs
 ):
     """Calibrate intrinsics for a specific camera."""
-    cam_dir = get_cam_dir(num)
+    cam_dir = config.get_cam_dir(num)
     frame_directory = os.path.join(cam_dir, frame_dirname)
     files = sample_files(frame_directory, n_images)
 
     # Get only camera matrix and distortion from intrinsic calibration
     _, mtx, dist, _, _ = calibrate_intrinsics(
-        files, pattern_size, STRIDE_LEN, **kwargs)
+        files, pattern_size, config.STRIDE_LEN, **kwargs)
 
     # Save intrinsic calibration in folder calibration
     calib_path = os.path.join(cam_dir, "calibration")
@@ -227,7 +216,7 @@ def calibrate_camera_extr(num, pattern_size, stride_len):
 
 def save_extrinsics(cam_num, rvec, tvec):
     """Write extrinsic parameters to disk."""
-    cam_dir = get_cam_dir(cam_num)
+    cam_dir = config.get_cam_dir(cam_num)
     calib_path = os.path.join(cam_dir, "calibration")
     if not os.path.exists(calib_path):
         os.mkdir(calib_path)
@@ -237,7 +226,7 @@ def save_extrinsics(cam_num, rvec, tvec):
 
 def load_all_calibration(cam_num):
     """Load both internal and external calibrations for a given camera"""
-    cam_dir = get_cam_dir(cam_num)
+    cam_dir = config.get_cam_dir(cam_num)
     calib_path = os.path.join(cam_dir, "calibration")
     mtx = np.load(os.path.join(calib_path, "mtx.npy"), allow_pickle=True)
     dist = np.load(os.path.join(calib_path, "dist.npy"), allow_pickle=True)
@@ -274,7 +263,7 @@ def calibrate_intr_and_extr(
     WINDOW_SIZE = (2, 2)  # Set window size for subpix function
 
     if n_samples is not None:
-        cam_dir = get_cam_dir(num)
+        cam_dir = config.get_cam_dir(num)
         vid_path = os.path.abspath(os.path.join(cam_dir, "intrinsics.avi"))
         detect_and_save_frames(vid_path, pattern_size,
                                n_samples, False, output_dirname=frame_dirname)
@@ -324,26 +313,29 @@ def draw_axes_from_zero(img, stride_len, mtx, dist, rvec, tvec, origin):
 
 
 def calibrate():
-    for cam_num in CAMERAS:
-        if CALIB_INTR:
+    """Run calibration with configuration from config"""
+    for cam_num in config.CAMERAS:
+        if config.CALIB_INTR:
             calibrate_and_save_cam_calib_intr(
                 cam_num,
-                N_CALIB,
-                CHESS_DIMS,
-                MANUAL_INTERPOLATE_INTR,
-                SHOW_LIVE,
-                n_sample=N_SAMPLE
+                config.N_CALIB,
+                config.CHESS_DIMS,
+                config.MANUAL_INTERPOLATE_INTR,
+                config.SHOW_LIVE,
+                n_sample=config.N_SAMPLE
             )
 
-        if CALIB_EXTR:
+        if config.CALIB_EXTR:
             mtx, dist = load_internal_calibrations(cam_num)
-            rvec, tvec = calibrate_camera_extr(cam_num, CHESS_DIMS, STRIDE_LEN)
+            rvec, tvec = calibrate_camera_extr(
+                cam_num, config.CHESS_DIMS, config.STRIDE_LEN)
             save_extrinsics(cam_num, rvec, tvec)
-            if PLOT_AXES:
+            if config.PLOT_AXES:
                 img = get_extr_calibration_img(cam_num)
-                objpoints = get_chessboard_obj_points(CHESS_DIMS, STRIDE_LEN)
+                objpoints = get_chessboard_obj_points(
+                    config.CHESS_DIMS, config.STRIDE_LEN)
                 corners, _ = cv.projectPoints(objpoints, rvec, tvec, mtx, dist)
-                drawn = draw_axes(img, STRIDE_LEN, mtx,
+                drawn = draw_axes(img, config.STRIDE_LEN, mtx,
                                   dist, rvec, tvec, corners)
                 cv.imshow("With axes", drawn)
                 cv.waitKey(0)
