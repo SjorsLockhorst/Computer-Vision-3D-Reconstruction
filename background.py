@@ -49,10 +49,10 @@ def load_background_model(cam_num):
     return np.load(backgound_model_path, allow_pickle=True)
 
 
-# Create version of this that uses std as theshold instead of hard limit
 def substract_background(
     background_model,
     img,
+    cutout,
     thresh_h,
     thresh_v,
     thresh_s,
@@ -68,12 +68,25 @@ def substract_background(
     std = abs(hsv - mean_background_model) / std_background_model
 
     mask = np.zeros(hsv.shape)
+    best_mask = np.zeros(hsv.shape)
+    best_error = float('inf')
 
-    mask[:, :, 0] = np.uint8(np.where(std[:, :, 0] > thresh_h, 1, 0))
-    mask[:, :, 1] = np.uint8(np.where(std[:, :, 1] > thresh_s, 1, 0))
-    mask[:, :, 2] = np.uint8(np.where(std[:, :, 2] > thresh_v, 1, 0))
+    for h in range(5):
+        for s in range(5):
+            for v in range(5):
 
-    full_mask = np.uint8(mask.all(axis=2))
+                mask[:, :, 0] = np.uint8(np.where(std[:, :, 0] > h, 1, 0))
+                mask[:, :, 1] = np.uint8(np.where(std[:, :, 1] > s, 1, 0))
+                mask[:, :, 2] = np.uint8(np.where(std[:, :, 2] > v, 1, 0))
+
+                full_mask = np.uint8(mask.all(axis=2))
+                print(cutout)
+                error = np.sum(abs(full_mask - cutout))
+
+                if error < best_error:
+                    print("best mask saved")
+                    print(h, s, v)
+                    best_mask = full_mask
 
     # Dilate mask
     if erode:
@@ -89,9 +102,9 @@ def substract_background(
 
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
-    background_removed = np.uint8(full_mask * gray)
+    background_removed = np.uint8(best_mask * gray)
 
-    return background_removed, full_mask
+    return background_removed, best_mask
 
 
 if __name__ == "__main__":
@@ -105,7 +118,12 @@ if __name__ == "__main__":
         vid = cv.VideoCapture(os.path.abspath(
             os.path.join(get_cam_dir(cam), "video.avi")))
         img = get_frame(vid, 0)
+        cam_dir = get_cam_dir(cam)
+        cutout_path = os.path.abspath(os.path.join(cam_dir, f"image_{cam}.png"))
+        cutout = cv.imread(cutout_path)
+        cv.imshow("cutout", cutout)
         background_removed, mask = substract_background(
-            load, img, H, S, V, dilate=True, erode=True)
+            # Erosion and dilation set to False
+            load, img, cutout, H, S, V, dilate=False, erode=False)
         cv.imshow("cleaned", background_removed)
         cv.waitKey(0)
