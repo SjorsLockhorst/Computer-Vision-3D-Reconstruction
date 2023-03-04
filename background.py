@@ -13,15 +13,33 @@ def create_background_model(cam_num):
     cam_dir = get_cam_dir(cam_num)
     video_path = os.path.abspath(os.path.join(cam_dir, "background.avi"))
     calib_dir = os.path.abspath(os.path.join(cam_dir, "calibration"))
+    
+    # Load in background video for camera
+    video = cv.VideoCapture(video_path)
+    # Check if video opened successfully
+    if not video.isOpened():
+        print("Error opening video file")
+    
     frames_list = []
-    for frame in frames(video_path):
+    
+    # Transform each frame to hsv and append to list
+    while True:
+        ret, frame = video.read()
+        if not ret:
+            break
         # Set to HSV
         hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
         frames_list.append(hsv)
+        
     frames_list = np.array(frames_list)
+
     mean_background_hsv = np.mean(frames_list, axis=0)
-    np.save(os.path.join(calib_dir, "background"), mean_background_hsv)
-    return mean_background_hsv
+    std_background_hsv = np.std(frames_list, axis=0)
+    
+    gaussian = np.stack((mean_background_hsv, std_background_hsv), axis=2)
+
+    np.save(os.path.join(calib_dir, "background"), gaussian)
+    return gaussian
 
 
 def load_background_model(cam_num):
@@ -43,13 +61,17 @@ def substract_background(
 ):
 
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-    hsv_diff = abs(hsv - background_model)
+    
+    mean_background_model = background_model[:, :, 0, :]
+    std_background_model = background_model[:, :, 1, :]
+
+    std = abs(img - mean_background_model)
 
     mask = np.zeros(hsv.shape)
 
-    mask[:, :, 0] = np.uint8(np.where(hsv_diff[:, :, 0] > thresh_h, 1, 0))
-    mask[:, :, 1] = np.uint8(np.where(hsv_diff[:, :, 1] > thresh_s, 1, 0))
-    mask[:, :, 2] = np.uint8(np.where(hsv_diff[:, :, 2] > thresh_v, 1, 0))
+    mask[:, :, 0] = np.uint8(np.where(std[:, :, 0] > thresh_h, 1, 0))
+    mask[:, :, 1] = np.uint8(np.where(std[:, :, 1] > thresh_s, 1, 0))
+    mask[:, :, 2] = np.uint8(np.where(std[:, :, 2] > thresh_v, 1, 0))
 
     full_mask = np.uint8(mask.all(axis=2))
 
@@ -75,9 +97,10 @@ def substract_background(
 if __name__ == "__main__":
     # THIS IS IMPROVEMENT BRANCH
     H = 2
-    S = 8
-    V = 13
+    S = 2
+    V = 2
     for cam in [1, 2, 3, 4]:
+        create_background_model(cam)
         load = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(
             os.path.join(get_cam_dir(cam), "video.avi")))
@@ -86,4 +109,3 @@ if __name__ == "__main__":
             load, img, H, S, V, dilate=True, erode=True)
         cv.imshow("cleaned", background_removed)
         cv.waitKey(0)
-    # gaussian_background_model_hsv(os.path.abspath(os.path.join(get_cam_dir(3), "background.avi")), os.path.abspath(os.path.join(get_cam_dir(3), "video.avi")))
