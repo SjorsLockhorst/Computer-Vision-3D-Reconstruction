@@ -105,7 +105,6 @@ if __name__ == "__main__":
         vid = cv.VideoCapture(os.path.abspath(
             os.path.join(get_cam_dir(cam), "video.avi")))
         img = get_frame(vid, 0)
-        # cv.imwrite(f'image_{cam}.png', img) save images for paint
         background_removed, mask = substract_background(
             load, img, H, S, V, dilate=True, erode=True)
         cv.imshow("cleaned", background_removed)
