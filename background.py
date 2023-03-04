@@ -65,7 +65,7 @@ def substract_background(
     mean_background_model = background_model[:, :, 0, :]
     std_background_model = background_model[:, :, 1, :]
 
-    std = abs(img - mean_background_model)
+    std = abs(hsv - mean_background_model) / std_background_model
 
     mask = np.zeros(hsv.shape)
 
@@ -96,15 +96,16 @@ def substract_background(
 
 if __name__ == "__main__":
     # THIS IS IMPROVEMENT BRANCH
-    H = 2
-    S = 2
-    V = 2
+    H = 50 # 2
+    S = 50 # 8
+    V = 50 # 13
     for cam in [1, 2, 3, 4]:
         create_background_model(cam)
         load = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(
             os.path.join(get_cam_dir(cam), "video.avi")))
         img = get_frame(vid, 0)
+        # cv.imwrite(f'image_{cam}.png', img) save images for paint
         background_removed, mask = substract_background(
             load, img, H, S, V, dilate=True, erode=True)
         cv.imshow("cleaned", background_removed)
