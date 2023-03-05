@@ -4,7 +4,7 @@ import cv2 as cv
 import glm
 import numpy as np
 
-from background import load_background_model, threshold_difference
+from background import load_background_model, threshold_difference, substract_background
 from calibration import (
     draw_axes_from_zero,
     get_frame,
@@ -81,9 +81,9 @@ def plot_projection(cam_num, point):
 
 def set_voxel_positions(width, height, depth):
     cams = [1, 2, 3, 4]
-    H = 2
-    S = 8
-    V = 13
+    H = 11
+    S = 13
+    V = 12
     voxels_in_mask = []
     for cam in cams:
         lookup_table = create_lookup_table(cam)
@@ -91,7 +91,8 @@ def set_voxel_positions(width, height, depth):
         bg_model = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
         img = get_frame(vid, 2)
-        mask = threshold_difference(bg_model, img, H, S, V, dilate=True, erode=True)[1]
+        mask = substract_background(bg_model, img, (H, S, V))[1]
+
         is_in_mask = in_mask(lookup_table.values(), mask)
         voxels_in_mask.append(is_in_mask)
 

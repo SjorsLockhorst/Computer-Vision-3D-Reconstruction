@@ -67,30 +67,67 @@ def threshold_difference(diff, thresholds):
     return full_mask
 
 
-def substract_background(background_model, img, thresholds):
+def substract_background(background_model, img, thresholds, erode_kernel=(3, 3), dilate_kernel=(2, 4), gaussian_kernel=(5, 5)):
+
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
 
     mean_background_model = background_model[:, :, 0, :]
     std_background_model = background_model[:, :, 1, :]
 
     std_diff = abs(hsv - mean_background_model) / std_background_model
+
     h, s, v = thresholds
     full_mask = threshold_difference(std_diff, thresholds)
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    # kernel = np.ones((1, 1), np.uint8)
-    # full_mask = cv.erode(full_mask, kernel)
-    kernel = np.ones((4, 1), np.uint8)
+
+    kernel = np.ones(dilate_kernel, np.uint8)
     full_mask = cv.dilate(full_mask, kernel)
-    full_mask = cv.GaussianBlur(full_mask, (5, 5), 0)
-    # kernel = np.ones((4, 1), np.uint8)
-    # full_mask = cv.dilate(full_mask, kernel)
-    # kernel = np.ones((1, 2), np.uint8)
-    # full_mask = cv.erode(full_mask, kernel)
-    # kernel = np.ones((4, 1), np.uint8)
-    # full_mask = cv.dilate(full_mask, kernel)
+
+    kernel = np.ones(erode_kernel, np.uint8)
+    full_mask = cv.erode(full_mask, kernel)
+
+
+    full_mask = cv.GaussianBlur(full_mask, gaussian_kernel, 0)
+
+    new_mask = np.zeros(gray.shape)
+    contours, _ = cv.findContours(
+        full_mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+    biggest = sorted(contours, key=cv.contourArea, reverse=True)[0]
+
+    cv.drawContours(new_mask, [biggest], 0, 1, -1)
+    full_mask = new_mask
+
     background_removed = np.uint8(full_mask * gray)
 
     return background_removed, full_mask
+
+def opt_substract_background(std_diff, img, thresholds, erode_kernel=(2, 2), dilate_kernel=(4, 1), gaussian_kernel=(5, 5)):
+
+    h, s, v = thresholds
+    full_mask = threshold_difference(std_diff, thresholds)
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+
+    kernel = np.ones(dilate_kernel, np.uint8)
+    full_mask = cv.dilate(full_mask, kernel)
+
+    kernel = np.ones(erode_kernel, np.uint8)
+    full_mask = cv.erode(full_mask, kernel)
+
+
+    full_mask = cv.GaussianBlur(full_mask, gaussian_kernel, 0)
+
+    new_mask = np.zeros(gray.shape)
+    contours, _ = cv.findContours(
+        full_mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+    biggest = sorted(contours, key=cv.contourArea, reverse=True)[0]
+
+    cv.drawContours(new_mask, [biggest], 0, 1, -1)
+    full_mask = new_mask
+
+    background_removed = np.uint8(full_mask * gray)
+
+    return background_removed, full_mask
+
 
 
 @njit(fastmath=True)
@@ -103,6 +140,9 @@ def find_optimal_background_substraction(
     h_range,
     s_range,
     v_range,
+    erode_combs,
+    dilate_combs,
+    gaussian_combs
 ):
 
     models = []
@@ -138,35 +178,24 @@ def find_optimal_background_substraction(
     best_s = 0
     best_v = 0
 
-    combinations = list(itertools.product(h_range, s_range, v_range))
-    for h, s, v in tqdm(combinations):
+    combinations = list(itertools.product(h_range, s_range, v_range, erode_combs, dilate_combs, gaussian_combs))
+    best_erode = None
+    best_dilate = None
+    best_guassian = None
+    for h, s, v, erode_kern, dilate_kern, gaussian_kern in tqdm(combinations):
 
         error = 0
         masks = []
         for cam_num in CAMERAS:
             std_diff = models[cam_num - 1]
             cutout = gold_labels[cam_num - 1]
+            img = images[cam_num - 1]
 
-            full_mask = threshold_difference(
-                std_diff, (h, s, v))
+            full_mask = opt_substract_background(std_diff, img, (h, s, v), erode_kernel=erode_kern, dilate_kernel=dilate_kern, gaussian_kernel=gaussian_kern)[1]
             masks.append(full_mask)
 
-            # if erode:
-            #     kernel = np.ones((1, 2), np.uint8)
-            #     full_mask = cv.erode(full_mask, kernel)
-            #     kernel = np.ones((2, 1), np.uint8)
-            #     full_mask = cv.erode(full_mask, kernel)
-            # if dilate:
-            #     kernel = np.ones((2, 8), np.uint8)
-            #     full_mask = cv.dilate(full_mask, kernel)
-            #     kernel = np.ones((8, 2), np.uint8)
-            #     full_mask = cv.dilate(full_mask, kernel)
-
-            # error = calculate_error(full_mask[:, :, None], cutout[:, :, None], hsv)
             xor = np.logical_xor(full_mask, cutout).astype("uint8")
-            contours, hierarchy = cv.findContours(
-                xor, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-            error = len(contours) * xor.sum()
+            error = xor.sum()
 
         if error < best_error:
             best_masks = masks
@@ -174,29 +203,40 @@ def find_optimal_background_substraction(
             best_h = h
             best_s = s
             best_v = v
+            best_erode = erode_kern
+            best_dilate = dilate_kern
+            best_guassian = gaussian_kern
 
     for img, best_mask in zip(images, best_masks):
         cv.imshow("Best mask", img * best_mask[:, :, None])
         cv.waitKey(0)
 
-    return best_masks, (best_h, best_s, best_v)
+    return best_masks, (best_h, best_s, best_v), (best_erode, best_dilate, best_guassian)
 
 
 if __name__ == "__main__":
-    # THIS IS IMPROVEMENT BRANCH
     # h_range = range(8, 25)
     # s_range = range(8, 25)
     # v_range = range(60, 85)
-    # background_masks, best_hsv = find_optimal_background_substraction(
-    #     1, h_range, s_range, v_range)
-    # background_removed,_ = substract_background(load, img, (100, 100, 200))
+    #
+    # erode_combs = itertools.product(range(1, 4), repeat=2)
+    # dilate_combs = itertools.product(range(1, 8), repeat=2)
+    # gaussian_combs = [(3, 3), (5, 5), (7, 7)]
+    #
+    # erode_combs = itertools.product(range(1, 4), repeat=2)
+    # dilate_combs = itertools.product(range(1, 8), repeat=2)
+    # gaussian_combs = [(3, 3)]
+    #
+    # background_masks, best_hsv, best_kernels = find_optimal_background_substraction(
+    #     1, h_range, s_range, v_range, erode_combs, dilate_combs, gaussian_combs)
     # print(best_hsv)
+    # print(best_kernels)
     for cam in CAMERAS:
         bg_model = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(
             os.path.join(get_cam_dir(cam), "video.avi")))
         img = get_frame(vid, 1)
-        background_removed = substract_background(bg_model, img, (18, 10, 61))[0]
+        background_removed = substract_background(
+            bg_model, img, (11, 13, 12))[0]
         cv.imshow("test", background_removed)
         cv.waitKey(0)
-
