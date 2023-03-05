@@ -134,3 +134,4 @@ data/cam*/frames/
 data/cam*/*.avi
 data/cam*/*.xml
 data/*.xml
+data/lookup_table.pickle
