@@ -55,7 +55,7 @@ if __name__ == "__main__":
         hsv_frame = cv.cvtColor(img, cv.COLOR_BGR2HSV)
         mask = gmm.apply(hsv_frame)
         std_dev = np.std(mask)
-        if std_dev > 40:
+        if std_dev > 90:
             mask = cv.threshold(mask, 128, 255, cv.THRESH_BINARY)[1]
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
         background_removed = gray * mask
