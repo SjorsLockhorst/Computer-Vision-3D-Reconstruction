@@ -52,11 +52,11 @@ if __name__ == "__main__":
         vid = cv.VideoCapture(os.path.abspath(
             os.path.join(get_cam_dir(cam), "video.avi")))
         img = get_frame(vid, 0)
+        
         hsv_frame = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+        
         mask = gmm.apply(hsv_frame)
-        std_dev = np.std(mask)
-        if std_dev > 90:
-            mask = cv.threshold(mask, 128, 255, cv.THRESH_BINARY)[1]
+
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
         background_removed = gray * mask
         cv.imshow("cleaned", background_removed)
