@@ -133,5 +133,6 @@ dmypy.json
 data/cam*/frames/
 data/cam*/*.avi
 data/cam*/*.xml
+data/cam*/*.png
 data/*.xml
 data/lookup_table.pickle
