@@ -16,8 +16,9 @@ from calibration import (
 from config import STRIDE_LEN, get_cam_dir, CAMERAS, CAM_RES
 
 block_size = 1.0
-scale = 4
-frame = 1
+
+scale = 4  # Factor by which everything is scaled up
+frame = 1  # Frame to initialise
 
 
 def generate_grid(width, depth):
@@ -32,6 +33,7 @@ def generate_grid(width, depth):
 
 
 def create_all_voxels():
+    """Creates entire voxel block of fixed size"""
     size_x = 32
     size_y = 32
     size_z = 64
@@ -48,6 +50,7 @@ def create_all_voxels():
     return voxel_block * scale_factor
 
 def create_all_voxels_set():
+    """Create all voxels as a set"""
     size_x = 32
     size_y = 32
     size_z = 64
@@ -68,6 +71,7 @@ def create_lookup_table(reload=False):
     camera.
     """
 
+    # Load lookup table if it exists and we don't want to reload
     lookup_table_path = os.path.abspath(os.path.join("data", "lookup_table.pickle"))
     if os.path.exists(lookup_table_path) and not reload:
         with open(lookup_table_path, "rb") as file:
@@ -81,6 +85,8 @@ def create_lookup_table(reload=False):
     total_voxels = size_x * size_y * size_z 
 
     to_include = np.ones(total_voxels).astype(bool)
+
+    # Init so that first camera has access to all voxels
     included_voxels = create_all_voxels_set()
     lookup_table = defaultdict(dict)
 
@@ -91,26 +97,36 @@ def create_lookup_table(reload=False):
         scaled_voxels = np.array(list(included_voxels))
 
         scale_factor = STRIDE_LEN / scale 
+
+        # Make sure projection is done from the middle of voxel cube
         middle_of_voxels = scaled_voxels - scale_factor / 2
         coords = cv.projectPoints(middle_of_voxels, rvec, tvec, mtx, dist)[0]
 
         coords = np.squeeze(coords)
+
+        # Only add if already included and within current image
         to_include = to_include & (coords[:, 0] < max_y) & ( coords[:, 1] < max_x)
+
         voxels_to_include = scaled_voxels[to_include]
         coords_to_include = coords[to_include]
 
         tuple_voxels = [tuple(voxel) for voxel in voxels_to_include]
         for voxel, coords in zip(tuple_voxels, coords_to_include):
+
+            # Only add voxels that are already selected
             if voxel in included_voxels:
                 lookup_table[voxel][cam_num] = tuple(coords.astype(int))
+        # Make sure only voxels that fall within image plain are added
         included_voxels = included_voxels & set(tuple_voxels)
 
+    # Save lookup table
     with open(lookup_table_path, "wb") as file:
         pickle.dump(lookup_table, file)
     return lookup_table
 
 
 def draw_axes_on_image(cam_num, frame_id):
+    """Helper function for testing, draws axes in 2d image."""
     point = (0,0,0)
     mtx, dist = load_intr_calibration(cam_num)
     rvec, tvec = load_extr_calibration(cam_num)
@@ -122,6 +138,7 @@ def draw_axes_on_image(cam_num, frame_id):
 
 
 def plot_projection(cam_num, point):
+    """Helper function for testing, draws a given 3d point in 2d image."""
     rescaled_point = tuple(map(lambda x: x * STRIDE_LEN / scale, point))
     mtx, dist = load_intr_calibration(cam_num)
     rvec, tvec = load_extr_calibration(cam_num)
@@ -135,13 +152,13 @@ def plot_projection(cam_num, point):
     cv.waitKey(0)
 
 
-# TODO: Find intersection while creating voxels
 def set_voxel_positions(width, height, depth):
-    global frame
+    """Calculate final voxel array"""
+    global frame  # Frame which to show
+
     H = 11
     S = 13
     V = 12
-    voxels_in_mask = []
 
     lookup_table = create_lookup_table()
     voxels_to_draw = set(lookup_table.keys())
@@ -154,21 +171,21 @@ def set_voxel_positions(width, height, depth):
         img = get_frame(vid, frame % length)
         mask = substract_background(bg_model, img, (H, S, V))[1]
         is_in_mask = in_mask(lookup_table, cam, mask)
+
+        # Make sure that only voxels that are already in all previous masks are added
         voxels_to_draw = voxels_to_draw & is_in_mask
 
     frame += 1
 
-    # voxels_to_draw = find_intersection_masks(*voxels_in_mask)
-    # selected = np.array(list(lookup_table.keys()))[voxels_to_draw]
+    # Put voxels in right scale and rearange axes for openGL
     scale_factor = STRIDE_LEN / scale 
     return [(x / scale_factor, -1 * z / scale_factor, y / scale_factor) for x, y, z in voxels_to_draw]
 
 def get_cam_positions():
-    # Generates dummy camera locations at the 4 corners of the room
+    """Generates camera positions."""
 
-    cams = [1, 2, 3, 4]
     cam_positions = []
-    for cam in cams:
+    for cam in CAMERAS:
         rvec, tvec = load_extr_calibration(cam)
         tvec /= STRIDE_LEN / scale
         # Calculate rotation matrix and camera position
@@ -181,10 +198,10 @@ def get_cam_positions():
 
 
 def get_cam_rotation_matrices(verbose=False):
+    """Rotates each camera appropriatly"""
 
-    cams = [1, 2, 3, 4]
     cam_angles = []
-    for i in cams:
+    for i in CAMERAS:
         rvec, tvec = load_extr_calibration(i)
         rot_m = cv.Rodrigues(rvec)[0]
         if verbose:
@@ -206,6 +223,7 @@ def get_cam_rotation_matrices(verbose=False):
     return cam_angles
 
 def in_mask(lookup_table, cam_num, mask):
+    """Check if all coordinates in a lookup table are in mask of a certain camera."""
     coordinates_in_mask = set()
     for voxel, cam_map in lookup_table.items():
         x, y = cam_map[cam_num]

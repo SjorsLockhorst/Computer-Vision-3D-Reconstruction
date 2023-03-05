@@ -234,7 +234,7 @@ def load_all_calibration(cam_num):
     return mtx, dist, rvec, tvec
 
 def load_intr_calibration(num):
-    """Loads internal calibrations based on experiment number."""
+    """Loads internal calibrations based on camera number."""
     load_path = os.path.join(config.get_cam_dir(num), "calibration")
 
     mtx = np.load(os.path.join(
@@ -245,6 +245,7 @@ def load_intr_calibration(num):
     return mtx, dist
 
 def load_extr_calibration(num):
+    """Loads external calibrations based on camera number."""
     load_path = os.path.join(config.get_cam_dir(num), "calibration")
     rvec = np.load(os.path.join(
         load_path, "rvec.npy"), allow_pickle=True)

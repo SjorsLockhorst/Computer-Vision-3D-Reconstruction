@@ -5,7 +5,6 @@ import os
 import cv2 as cv
 import numpy as np
 from tqdm import tqdm
-from numba import njit
 
 import itertools
 
@@ -14,6 +13,7 @@ from config import get_cam_dir, CAMERAS
 
 
 def create_background_model(cam_num):
+    """Create a background model for a given camera and save it to disk."""
     cam_dir = get_cam_dir(cam_num)
     video_path = os.path.abspath(os.path.join(cam_dir, "background.avi"))
     calib_dir = os.path.abspath(os.path.join(cam_dir, "calibration"))
@@ -47,6 +47,7 @@ def create_background_model(cam_num):
 
 
 def load_background_model(cam_num):
+    """Load background model from disk for a certain camera."""
     cam_dir = get_cam_dir(cam_num)
     backgound_model_path = os.path.join(
         cam_dir, "calibration", "background.npy")
@@ -54,7 +55,7 @@ def load_background_model(cam_num):
 
 
 def threshold_difference(diff, thresholds):
-
+    """Apply a threshold to a difference in HSV values"""
     thresh_h, thresh_s, thresh_v = thresholds
 
     mask = np.zeros(diff.shape)
@@ -67,7 +68,15 @@ def threshold_difference(diff, thresholds):
     return full_mask
 
 
-def substract_background(background_model, img, thresholds, erode_kernel=(3, 3), dilate_kernel=(2, 4), gaussian_kernel=(5, 5)):
+def substract_background(
+    background_model,
+    img,
+    thresholds,
+    erode_kernel=(3, 3),
+    dilate_kernel=(2,4),
+    gaussian_kernel=(5,5)
+):
+    """Substract background from an image given a background model and parameters."""
 
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
 
@@ -86,7 +95,6 @@ def substract_background(background_model, img, thresholds, erode_kernel=(3, 3),
     kernel = np.ones(erode_kernel, np.uint8)
     full_mask = cv.erode(full_mask, kernel)
 
-
     full_mask = cv.GaussianBlur(full_mask, gaussian_kernel, 0)
 
     new_mask = np.zeros(gray.shape)
@@ -101,8 +109,9 @@ def substract_background(background_model, img, thresholds, erode_kernel=(3, 3),
 
     return background_removed, full_mask
 
-def opt_substract_background(std_diff, img, thresholds, erode_kernel=(2, 2), dilate_kernel=(4, 1), gaussian_kernel=(5, 5)):
 
+def opt_substract_background(std_diff, img, thresholds, erode_kernel=(2, 2), dilate_kernel=(4, 1), gaussian_kernel=(5, 5)):
+    """Alternative helper used when background diff is already available."""
     h, s, v = thresholds
     full_mask = threshold_difference(std_diff, thresholds)
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
@@ -113,7 +122,6 @@ def opt_substract_background(std_diff, img, thresholds, erode_kernel=(2, 2), dil
     kernel = np.ones(erode_kernel, np.uint8)
     full_mask = cv.erode(full_mask, kernel)
 
-
     full_mask = cv.GaussianBlur(full_mask, gaussian_kernel, 0)
 
     new_mask = np.zeros(gray.shape)
@@ -127,12 +135,6 @@ def opt_substract_background(std_diff, img, thresholds, erode_kernel=(2, 2), dil
     background_removed = np.uint8(full_mask * gray)
 
     return background_removed, full_mask
-
-
-
-@njit(fastmath=True)
-def calculate_error(full_mask, cutout, img):
-    return np.absolute(((full_mask * img - cutout * img)**2).sum())
 
 
 def find_optimal_background_substraction(
@@ -144,6 +146,10 @@ def find_optimal_background_substraction(
     dilate_combs,
     gaussian_combs
 ):
+    """
+    Loop over parameters and find background substraction that is closest to a manual 
+    cutout.
+    """
 
     models = []
     images = []
@@ -178,7 +184,8 @@ def find_optimal_background_substraction(
     best_s = 0
     best_v = 0
 
-    combinations = list(itertools.product(h_range, s_range, v_range, erode_combs, dilate_combs, gaussian_combs))
+    combinations = list(itertools.product(
+        h_range, s_range, v_range, erode_combs, dilate_combs, gaussian_combs))
     best_erode = None
     best_dilate = None
     best_guassian = None
@@ -191,7 +198,8 @@ def find_optimal_background_substraction(
             cutout = gold_labels[cam_num - 1]
             img = images[cam_num - 1]
 
-            full_mask = opt_substract_background(std_diff, img, (h, s, v), erode_kernel=erode_kern, dilate_kernel=dilate_kern, gaussian_kernel=gaussian_kern)[1]
+            full_mask = opt_substract_background(
+                std_diff, img, (h, s, v), erode_kernel=erode_kern, dilate_kernel=dilate_kern, gaussian_kernel=gaussian_kern)[1]
             masks.append(full_mask)
 
             xor = np.logical_xor(full_mask, cutout).astype("uint8")
@@ -214,23 +222,8 @@ def find_optimal_background_substraction(
     return best_masks, (best_h, best_s, best_v), (best_erode, best_dilate, best_guassian)
 
 
-if __name__ == "__main__":
-    # h_range = range(8, 25)
-    # s_range = range(8, 25)
-    # v_range = range(60, 85)
-    #
-    # erode_combs = itertools.product(range(1, 4), repeat=2)
-    # dilate_combs = itertools.product(range(1, 8), repeat=2)
-    # gaussian_combs = [(3, 3), (5, 5), (7, 7)]
-    #
-    # erode_combs = itertools.product(range(1, 4), repeat=2)
-    # dilate_combs = itertools.product(range(1, 8), repeat=2)
-    # gaussian_combs = [(3, 3)]
-    #
-    # background_masks, best_hsv, best_kernels = find_optimal_background_substraction(
-    #     1, h_range, s_range, v_range, erode_combs, dilate_combs, gaussian_combs)
-    # print(best_hsv)
-    # print(best_kernels)
+def show_background_substraction():
+    """Shows final background substraction."""
     for cam in CAMERAS:
         bg_model = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(
@@ -240,3 +233,22 @@ if __name__ == "__main__":
             bg_model, img, (11, 13, 12))[0]
         cv.imshow("test", background_removed)
         cv.waitKey(0)
+
+
+if __name__ == "__main__":
+    h_range = range(0, 25)
+    s_range = range(0, 25)
+    v_range = range(0, 85)
+
+    erode_combs = itertools.product(range(1, 4), repeat=2)
+    dilate_combs = itertools.product(range(1, 8), repeat=2)
+    gaussian_combs = [(3, 3), (5, 5), (7, 7)]
+
+    erode_combs = itertools.product(range(1, 4), repeat=2)
+    dilate_combs = itertools.product(range(1, 8), repeat=2)
+    gaussian_combs = [(3, 3)]
+
+    background_masks, best_hsv, best_kernels = find_optimal_background_substraction(
+        1, h_range, s_range, v_range, erode_combs, dilate_combs, gaussian_combs)
+    print(best_hsv)
+    print(best_kernels)
