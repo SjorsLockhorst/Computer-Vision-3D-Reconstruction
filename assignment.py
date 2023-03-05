@@ -17,6 +17,7 @@ from config import STRIDE_LEN, get_cam_dir, CAMERAS, CAM_RES
 
 block_size = 1.0
 scale = 4
+frame = 1
 
 
 def generate_grid(width, depth):
@@ -141,16 +142,21 @@ def set_voxel_positions(width, height, depth):
     S = 8
     V = 13
 
+    global frame
     lookup_table = create_lookup_table()
     voxels_to_draw = set(lookup_table.keys())
 
     for cam in CAMERAS:
         bg_model = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
-        img = get_frame(vid, 2)
+        length = vid.get(cv.CAP_PROP_FRAME_COUNT)
+
+        img = get_frame(vid, frame % length)
         mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
         is_in_mask = in_mask(lookup_table, cam, mask)
         voxels_to_draw = voxels_to_draw & is_in_mask
+
+    frame += 1
 
     # voxels_to_draw = find_intersection_masks(*voxels_in_mask)
     # selected = np.array(list(lookup_table.keys()))[voxels_to_draw]
