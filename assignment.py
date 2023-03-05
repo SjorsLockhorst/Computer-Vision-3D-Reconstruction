@@ -79,6 +79,7 @@ def plot_projection(cam_num, point):
     cv.waitKey(0)
 
 
+# TODO: Find intersection while creating voxels
 def set_voxel_positions(width, height, depth):
     cams = [1, 2, 3, 4]
     H = 2
