@@ -53,23 +53,45 @@ def load_background_model(cam_num):
     return np.load(backgound_model_path, allow_pickle=True)
 
 
-def substract_background(background_model, img, thresholds):
+def threshold_difference(diff, thresholds):
 
     thresh_h, thresh_s, thresh_v = thresholds
 
-    mask = np.zeros(img.shape)
-    mask[:, :, 0] = np.uint8(np.where(background_model[:, :, 0] > thresh_h, 1, 0))
-    mask[:, :, 1] = np.uint8(np.where(background_model[:, :, 1] > thresh_s, 1, 0))
-    mask[:, :, 2] = np.uint8(np.where(background_model[:, :, 2] > thresh_v, 1, 0))
+    mask = np.zeros(diff.shape)
+    mask[:, :, 0] = np.uint8(np.where(diff[:, :, 0] > thresh_h, 1, 0))
+    mask[:, :, 1] = np.uint8(np.where(diff[:, :, 1] > thresh_s, 1, 0))
+    mask[:, :, 2] = np.uint8(np.where(diff[:, :, 2] > thresh_v, 1, 0))
 
     full_mask = np.uint8(mask.all(axis=2))
 
     return full_mask
+
+def substract_background(background_model, img, thresholds):
+    hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+
+    mean_background_model = background_model[:, :, 0, :]
+    std_background_model = background_model[:, :, 1, :]
+
+    std_diff = abs(hsv - mean_background_model) / std_background_model
+    h,s,v = thresholds
+    full_mask = threshold_difference(std_diff, thresholds)
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    kernel = np.ones((1, 2), np.uint8)
+    full_mask = cv.erode(full_mask, kernel)
+    kernel = np.ones((2, 1), np.uint8)
+    full_mask = cv.erode(full_mask, kernel)
+    kernel = np.ones((2, 8), np.uint8)
+    full_mask = cv.dilate(full_mask, kernel)
+    kernel = np.ones((8, 2), np.uint8)
+    full_mask = cv.dilate(full_mask, kernel)
+    background_removed = np.uint8(full_mask * gray)
+
+    return background_removed, full_mask
     
 
 @njit(fastmath=True)
-def calculate_error(full_mask, cutout):
-    return np.absolute((full_mask - cutout).sum())
+def calculate_error(full_mask, cutout, img):
+    return np.absolute(((full_mask* img - cutout* img)**2).sum())
 
 def find_optimal_background_substraction(
     background_model,
@@ -87,7 +109,7 @@ def find_optimal_background_substraction(
     mean_background_model = background_model[:, :, 0, :]
     std_background_model = background_model[:, :, 1, :]
 
-    std_model = abs(hsv - mean_background_model) / std_background_model
+    std_diff = abs(hsv - mean_background_model) / std_background_model
 
     cutout = cv.cvtColor(cutout, cv.COLOR_BGR2GRAY)
     cutout = np.where(cutout == 255, 1, 0)
@@ -98,29 +120,31 @@ def find_optimal_background_substraction(
     best_s = 0
     best_v = 0
 
-    combinations = list(itertools.product(range(40, 80), range(40, 80), range(100, 200)))
+    combinations = list(itertools.product(range(200, 210), range(200, 210), range(200, 210)))
     for h, s, v in tqdm(combinations):
 
-        full_mask = substract_background(
-                std_model, img, (h, s, v))
+        full_mask = threshold_difference(
+                std_diff, (h, s, v))
 
-        error = calculate_error(full_mask, cutout)
+        if erode:
+            kernel = np.ones((1, 2), np.uint8)
+            full_mask = cv.erode(full_mask, kernel)
+            kernel = np.ones((2, 1), np.uint8)
+            full_mask = cv.erode(full_mask, kernel)
+        if dilate:
+            kernel = np.ones((2, 8), np.uint8)
+            full_mask = cv.dilate(full_mask, kernel)
+            kernel = np.ones((8, 2), np.uint8)
+            full_mask = cv.dilate(full_mask, kernel)
+
+        error = calculate_error(full_mask[:, :, None], cutout[:, :, None], hsv)
+
         if error < best_error:
             best_mask = full_mask
             best_h = h
             best_s = s
             best_v = v
 
-    if erode:
-        kernel = np.ones((1, 2), np.uint8)
-        best_mask = cv.erode(best_mask, kernel)
-        kernel = np.ones((2, 1), np.uint8)
-        best_mask = cv.erode(best_mask, kernel)
-    if dilate:
-        kernel = np.ones((2, 8), np.uint8)
-        best_mask = cv.dilate(best_mask, kernel)
-        kernel = np.ones((8, 2), np.uint8)
-        best_mask = cv.dilate(best_mask, kernel)
 
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
@@ -146,7 +170,8 @@ if __name__ == "__main__":
         # cv.imshow("cutout", cutout)
         background_removed, mask, best_hsv = find_optimal_background_substraction(
             # Erosion and dilation set to False
-            load, img, cutout, H, S, V, dilate=True, erode=True)
+            load, img, cutout, H, S, V, dilate=False, erode=False)
+        # background_removed,_ = substract_background(load, img, (100, 100, 200))
         print(best_hsv)
         cv.imshow("cleaned", background_removed)
         cv.waitKey(0)
