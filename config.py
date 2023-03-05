@@ -5,6 +5,7 @@ DATA_DIR = "data"
 CAM_DIR = "cam{}"
 CAMERAS = [1, 2, 3, 4]
 NUM_CAMS = len(CAMERAS)
+CAM_RES = (488,644)
 
 STRIDE_LEN = 115
 CHESS_DIMS = (8, 6)

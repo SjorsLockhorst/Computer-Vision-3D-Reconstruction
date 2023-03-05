@@ -1,5 +1,6 @@
 import os
 from collections import defaultdict
+import pickle
 
 import cv2 as cv
 import glm
@@ -12,7 +13,7 @@ from calibration import (
     load_extr_calibration,
     load_intr_calibration,
 )
-from config import STRIDE_LEN, get_cam_dir, CAMERAS
+from config import STRIDE_LEN, get_cam_dir, CAMERAS, CAM_RES
 
 block_size = 1.0
 scale = 4
@@ -60,12 +61,24 @@ def create_all_voxels_set():
     return voxel_block
 
 
-def create_lookup_tables(dims):
-    max_y, max_x = dims
+def create_lookup_table(reload=False):
+    """
+    Create lookup table with mapping of voxel world position to image coordinates per 
+    camera.
+    """
+
+    lookup_table_path = os.path.abspath(os.path.join("data", "lookup_table.pickle"))
+    if os.path.exists(lookup_table_path) and not reload:
+        with open(lookup_table_path, "rb") as file:
+            return pickle.load(file)
+
     size_x = 32
     size_y = 32
     size_z = 64
+
+    max_y, max_x = CAM_RES
     total_voxels = size_x * size_y * size_z 
+
     to_include = np.ones(total_voxels).astype(bool)
     included_voxels = create_all_voxels_set()
     lookup_table = defaultdict(dict)
@@ -74,9 +87,12 @@ def create_lookup_tables(dims):
         mtx, dist = load_intr_calibration(cam_num)
         rvec, tvec = load_extr_calibration(cam_num)
 
-        scaled_voxels = create_all_voxels()
+        scaled_voxels = np.array(list(included_voxels))
 
-        coords = cv.projectPoints(scaled_voxels, rvec, tvec, mtx, dist)[0]
+        scale_factor = STRIDE_LEN / scale 
+        middle_of_voxels = scaled_voxels - scale_factor / 2
+        coords = cv.projectPoints(middle_of_voxels, rvec, tvec, mtx, dist)[0]
+
         coords = np.squeeze(coords)
         to_include = to_include & (coords[:, 0] < max_y) & ( coords[:, 1] < max_x)
         voxels_to_include = scaled_voxels[to_include]
@@ -88,6 +104,8 @@ def create_lookup_tables(dims):
                 lookup_table[voxel][cam_num] = tuple(coords.astype(int))
         included_voxels = included_voxels & set(tuple_voxels)
 
+    with open(lookup_table_path, "wb") as file:
+        pickle.dump(lookup_table, file)
     return lookup_table
 
 
@@ -118,17 +136,15 @@ def plot_projection(cam_num, point):
 
 # TODO: Find intersection while creating voxels
 def set_voxel_positions(width, height, depth):
-    cams = [1, 2, 3, 4]
+    # Hard coded hsv values
     H = 2
     S = 8
     V = 13
-    vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(1), "video.avi")))
-    img = get_frame(vid, 2)
-    lookup_table = create_lookup_tables((img.shape[0],img.shape[1]))
+
+    lookup_table = create_lookup_table()
     voxels_to_draw = set(lookup_table.keys())
 
-    for cam in cams:
-
+    for cam in CAMERAS:
         bg_model = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
         img = get_frame(vid, 2)
@@ -159,13 +175,19 @@ def get_cam_positions():
     return [[cam_pos[0], -1 * cam_pos[2], cam_pos[1]] for cam_pos in cam_positions]
 
 
-def get_cam_rotation_matrices():
+def get_cam_rotation_matrices(verbose=False):
 
     cams = [1, 2, 3, 4]
     cam_angles = []
     for i in cams:
         rvec, tvec = load_extr_calibration(i)
         rot_m = cv.Rodrigues(rvec)[0]
+        if verbose:
+            print(f"Cam: {i}")
+            print("rvec")
+            print(rvec)
+            print("tvec")
+            print(tvec)
         with_zeros = np.pad(rot_m, ((0, 1), (0, 1)))
         with_zeros[with_zeros.shape[0] - 1, with_zeros.shape[1] - 1] = 1
 
@@ -185,15 +207,3 @@ def in_mask(lookup_table, cam_num, mask):
         if mask[y][x] == 1:
             coordinates_in_mask.add(voxel)
     return coordinates_in_mask
-
-def find_intersection_masks(mask1, mask2, mask3, mask4):
-    return mask1 & mask2 & mask3 & mask4
-
-
-if __name__ == "__main__":
-    # for i in [1, 2, 3, 4]:
-    #     plot_projection(i, (0, 0, -10))
-    cam = 1
-    vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
-    img = get_frame(vid, 2)
-    test = create_lookup_tables((img.shape[0], img.shape[1]))
