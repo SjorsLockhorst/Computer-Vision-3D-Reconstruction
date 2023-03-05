@@ -6,7 +6,7 @@ import cv2 as cv
 import glm
 import numpy as np
 
-from background import load_background_model, substract_background
+from background import load_background_model, threshold_difference, substract_background
 from calibration import (
     draw_axes_from_zero,
     get_frame,
@@ -137,12 +137,12 @@ def plot_projection(cam_num, point):
 
 # TODO: Find intersection while creating voxels
 def set_voxel_positions(width, height, depth):
-    # Hard coded hsv values
-    H = 2
-    S = 8
-    V = 13
-
     global frame
+    H = 11
+    S = 13
+    V = 12
+    voxels_in_mask = []
+
     lookup_table = create_lookup_table()
     voxels_to_draw = set(lookup_table.keys())
 
@@ -152,7 +152,7 @@ def set_voxel_positions(width, height, depth):
         length = vid.get(cv.CAP_PROP_FRAME_COUNT)
 
         img = get_frame(vid, frame % length)
-        mask = substract_background(bg_model, img, H, S, V, dilate=True, erode=True)[1]
+        mask = substract_background(bg_model, img, (H, S, V))[1]
         is_in_mask = in_mask(lookup_table, cam, mask)
         voxels_to_draw = voxels_to_draw & is_in_mask
 
@@ -162,7 +162,6 @@ def set_voxel_positions(width, height, depth):
     # selected = np.array(list(lookup_table.keys()))[voxels_to_draw]
     scale_factor = STRIDE_LEN / scale 
     return [(x / scale_factor, -1 * z / scale_factor, y / scale_factor) for x, y, z in voxels_to_draw]
-
 
 def get_cam_positions():
     # Generates dummy camera locations at the 4 corners of the room
