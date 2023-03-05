@@ -10,7 +10,7 @@ from numba import njit
 import itertools
 
 from calibration import get_frame
-from config import get_cam_dir
+from config import get_cam_dir, CAMERAS
 
 
 def create_background_model(cam_num):
@@ -66,6 +66,7 @@ def threshold_difference(diff, thresholds):
 
     return full_mask
 
+
 def substract_background(background_model, img, thresholds):
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
 
@@ -73,105 +74,129 @@ def substract_background(background_model, img, thresholds):
     std_background_model = background_model[:, :, 1, :]
 
     std_diff = abs(hsv - mean_background_model) / std_background_model
-    h,s,v = thresholds
+    h, s, v = thresholds
     full_mask = threshold_difference(std_diff, thresholds)
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    kernel = np.ones((1, 2), np.uint8)
-    full_mask = cv.erode(full_mask, kernel)
-    kernel = np.ones((2, 1), np.uint8)
-    full_mask = cv.erode(full_mask, kernel)
-    kernel = np.ones((2, 8), np.uint8)
+    # kernel = np.ones((1, 1), np.uint8)
+    # full_mask = cv.erode(full_mask, kernel)
+    kernel = np.ones((4, 1), np.uint8)
     full_mask = cv.dilate(full_mask, kernel)
-    kernel = np.ones((8, 2), np.uint8)
-    full_mask = cv.dilate(full_mask, kernel)
+    full_mask = cv.GaussianBlur(full_mask, (5, 5), 0)
+    # kernel = np.ones((4, 1), np.uint8)
+    # full_mask = cv.dilate(full_mask, kernel)
+    # kernel = np.ones((1, 2), np.uint8)
+    # full_mask = cv.erode(full_mask, kernel)
+    # kernel = np.ones((4, 1), np.uint8)
+    # full_mask = cv.dilate(full_mask, kernel)
     background_removed = np.uint8(full_mask * gray)
 
     return background_removed, full_mask
-    
+
 
 @njit(fastmath=True)
 def calculate_error(full_mask, cutout, img):
-    return np.absolute(((full_mask* img - cutout* img)**2).sum())
+    return np.absolute(((full_mask * img - cutout * img)**2).sum())
+
 
 def find_optimal_background_substraction(
-    background_model,
-    img,
-    cutout,
-    thresh_h,
-    thresh_v,
-    thresh_s,
-    dilate=False,
-    erode=False
+    frame_id,
+    h_range,
+    s_range,
+    v_range,
 ):
 
-    hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+    models = []
+    images = []
+    gold_labels = []
+    for cam in CAMERAS:
+        create_background_model(cam)
+        bg_model = load_background_model(cam)
+        vid = cv.VideoCapture(os.path.abspath(
+            os.path.join(get_cam_dir(cam), "video.avi")))
+        img = get_frame(vid, frame_id)
+        images.append(img)
+        cam_dir = get_cam_dir(cam)
+        cutout_path = os.path.abspath(os.path.join(cam_dir, f"image{cam}.png"))
+        cutout = cv.imread(cutout_path)
 
-    mean_background_model = background_model[:, :, 0, :]
-    std_background_model = background_model[:, :, 1, :]
+        hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
 
-    std_diff = abs(hsv - mean_background_model) / std_background_model
+        mean_background_model = bg_model[:, :, 0, :]
+        std_background_model = bg_model[:, :, 1, :]
 
-    cutout = cv.cvtColor(cutout, cv.COLOR_BGR2GRAY)
-    cutout = np.where(cutout == 255, 1, 0)
+        std_diff = abs(hsv - mean_background_model) / std_background_model
+        models.append(std_diff)
 
-    best_mask = np.zeros(img.shape)
+        cutout = cv.cvtColor(cutout, cv.COLOR_BGR2GRAY)
+        cutout = np.where(cutout == 255, 1, 0)
+        gold_labels.append(cutout)
+
+    print("Created all models, start optimizing")
+    best_masks = []
     best_error = float('inf')
     best_h = 0
     best_s = 0
     best_v = 0
 
-    combinations = list(itertools.product(range(200, 210), range(200, 210), range(200, 210)))
+    combinations = list(itertools.product(h_range, s_range, v_range))
     for h, s, v in tqdm(combinations):
 
-        full_mask = threshold_difference(
+        error = 0
+        masks = []
+        for cam_num in CAMERAS:
+            std_diff = models[cam_num - 1]
+            cutout = gold_labels[cam_num - 1]
+
+            full_mask = threshold_difference(
                 std_diff, (h, s, v))
+            masks.append(full_mask)
 
-        if erode:
-            kernel = np.ones((1, 2), np.uint8)
-            full_mask = cv.erode(full_mask, kernel)
-            kernel = np.ones((2, 1), np.uint8)
-            full_mask = cv.erode(full_mask, kernel)
-        if dilate:
-            kernel = np.ones((2, 8), np.uint8)
-            full_mask = cv.dilate(full_mask, kernel)
-            kernel = np.ones((8, 2), np.uint8)
-            full_mask = cv.dilate(full_mask, kernel)
+            # if erode:
+            #     kernel = np.ones((1, 2), np.uint8)
+            #     full_mask = cv.erode(full_mask, kernel)
+            #     kernel = np.ones((2, 1), np.uint8)
+            #     full_mask = cv.erode(full_mask, kernel)
+            # if dilate:
+            #     kernel = np.ones((2, 8), np.uint8)
+            #     full_mask = cv.dilate(full_mask, kernel)
+            #     kernel = np.ones((8, 2), np.uint8)
+            #     full_mask = cv.dilate(full_mask, kernel)
 
-        error = calculate_error(full_mask[:, :, None], cutout[:, :, None], hsv)
+            # error = calculate_error(full_mask[:, :, None], cutout[:, :, None], hsv)
+            xor = np.logical_xor(full_mask, cutout).astype("uint8")
+            contours, hierarchy = cv.findContours(
+                xor, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+            error = len(contours) * xor.sum()
 
         if error < best_error:
-            best_mask = full_mask
+            best_masks = masks
+            best_error = error
             best_h = h
             best_s = s
             best_v = v
 
+    for img, best_mask in zip(images, best_masks):
+        cv.imshow("Best mask", img * best_mask[:, :, None])
+        cv.waitKey(0)
 
-    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-
-    background_removed = np.uint8(best_mask * gray)
-
-    return background_removed, best_mask, (best_h, best_s, best_v)
+    return best_masks, (best_h, best_s, best_v)
 
 
 if __name__ == "__main__":
     # THIS IS IMPROVEMENT BRANCH
-    H = 50  # 2
-    S = 50  # 8
-    V = 50  # 13
-    for cam in [1, 2, 3, 4]:
-        create_background_model(cam)
-        load = load_background_model(cam)
+    # h_range = range(8, 25)
+    # s_range = range(8, 25)
+    # v_range = range(60, 85)
+    # background_masks, best_hsv = find_optimal_background_substraction(
+    #     1, h_range, s_range, v_range)
+    # background_removed,_ = substract_background(load, img, (100, 100, 200))
+    # print(best_hsv)
+    for cam in CAMERAS:
+        bg_model = load_background_model(cam)
         vid = cv.VideoCapture(os.path.abspath(
             os.path.join(get_cam_dir(cam), "video.avi")))
-        img = get_frame(vid, 0)
-        cam_dir = get_cam_dir(cam)
-        cutout_path = os.path.abspath(os.path.join(cam_dir, f"image{cam}.png"))
-        cutout = cv.imread(cutout_path)
-        # cv.imshow("cutout", cutout)
-        background_removed, mask, best_hsv = find_optimal_background_substraction(
-            # Erosion and dilation set to False
-            load, img, cutout, H, S, V, dilate=False, erode=False)
-        # background_removed,_ = substract_background(load, img, (100, 100, 200))
-        print(best_hsv)
-        cv.imshow("cleaned", background_removed)
+        img = get_frame(vid, 1)
+        background_removed = substract_background(bg_model, img, (18, 10, 61))[0]
+        cv.imshow("test", background_removed)
         cv.waitKey(0)
+
