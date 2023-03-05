@@ -242,21 +242,3 @@ def sample_files(dir_path, n, ext="jpg"):
 
     # Join each file to full path and return
     return [os.path.join(dir_path, file) for file in selected_files]
-
-# if __name__ == "__main__":
-#     from config import CHESS_DIMS
-#
-#     img = cv.imread("data/cam1/frames/frame_108.jpg")
-#     res, mtx = perspective_transform(img)
-#     _, corners = interpolate_chessboard(res, CHESS_DIMS, window_size=(2, 2))
-#
-#     cv.drawChessboardCorners(res, CHESS_DIMS, corners, True)
-#     cv.imshow("transformed", res)
-#     cv.waitKey(0)
-#
-#     mtx_inv = np.linalg.pinv(mtx)
-#     corners2 = cv.perspectiveTransform(corners, mtx_inv)
-#     cv.drawChessboardCorners(img, CHESS_DIMS, corners2, True)
-#     #
-#     cv.imshow("original", img)
-#     cv.waitKey(0)
