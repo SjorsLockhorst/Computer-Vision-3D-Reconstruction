@@ -6,8 +6,9 @@ import re
 import cv2 as cv
 import numpy as np
 
-from config import DATA_DIR
+from config import conf
 
+DATA_DIR = conf.DATA_DIR
 
 def load_image(path):
     """Load image from path."""

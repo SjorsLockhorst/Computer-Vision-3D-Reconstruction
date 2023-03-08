@@ -7,7 +7,7 @@ import os
 import cv2 as cv
 import numpy as np
 
-import config
+from config import conf
 
 from util import (
     interpolate_chessboard,
@@ -84,8 +84,7 @@ def sample_video_and_calibrate_intr(
     Draw n frames uniformly from intrinsics video, calibrate intrinsics of camera 
     with subset using those samples.
     """
-    cam_dir = config.get_cam_dir(num)
-    vid_path = os.path.join(cam_dir, "intrinsics.avi")
+    vid_path = conf.get_intrinsics(num)
     detect_and_save_frames(vid_path, pattern_size, n_samples,
                            manual_interpolate, output_dirname=frame_dirname, **kwargs)
     mtx, dist = calibrate_camera_intr(
@@ -101,13 +100,13 @@ def calibrate_camera_intr(
         **kwargs
 ):
     """Calibrate intrinsics for a specific camera."""
-    cam_dir = config.get_cam_dir(num)
+    cam_dir = conf.get_cam_dir(num)
     frame_directory = os.path.join(cam_dir, frame_dirname)
     files = sample_files(frame_directory, n_images)
 
     # Get only camera matrix and distortion from intrinsic calibration
     _, mtx, dist, _, _ = calibrate_intrinsics(
-        files, pattern_size, config.STRIDE_LEN, **kwargs)
+        files, pattern_size, conf.STRIDE_LEN, **kwargs)
 
     # Save intrinsic calibration in folder calibration
     calib_path = os.path.join(cam_dir, "calibration")
@@ -215,8 +214,7 @@ def calibrate_camera_extr(num, pattern_size, stride_len):
 
 def save_extrinsics(cam_num, rvec, tvec):
     """Write extrinsic parameters to disk."""
-    cam_dir = config.get_cam_dir(cam_num)
-    calib_path = os.path.join(cam_dir, "calibration")
+    calib_path = conf.get_calib_dir(cam_num)
     if not os.path.exists(calib_path):
         os.mkdir(calib_path)
     np.save(os.path.join(calib_path, "rvec"), rvec)
@@ -225,33 +223,17 @@ def save_extrinsics(cam_num, rvec, tvec):
 
 def load_all_calibration(cam_num):
     """Load both internal and external calibrations for a given camera"""
-    cam_dir = config.get_cam_dir(cam_num)
-    calib_path = os.path.join(cam_dir, "calibration")
-    mtx = np.load(os.path.join(calib_path, "mtx.npy"), allow_pickle=True)
-    dist = np.load(os.path.join(calib_path, "dist.npy"), allow_pickle=True)
-    rvec = np.load(os.path.join(calib_path, "rvec.npy"), allow_pickle=True)
-    tvec = np.load(os.path.join(calib_path, "tvec.npy"), allow_pickle=True)
+    mtx, dist = conf.load_intr_calib(cam_num)
+    rvec, tvec = conf.load_extr_calib(cam_num)
     return mtx, dist, rvec, tvec
 
 def load_intr_calibration(num):
     """Loads internal calibrations based on camera number."""
-    load_path = os.path.join(config.get_cam_dir(num), "calibration")
-
-    mtx = np.load(os.path.join(
-        load_path, "mtx.npy"), allow_pickle=True)
-    dist = np.load(os.path.join(
-        load_path, "dist.npy"), allow_pickle=True)
-    
-    return mtx, dist
+    return conf.load_intr_calib(num)
 
 def load_extr_calibration(num):
     """Loads external calibrations based on camera number."""
-    load_path = os.path.join(config.get_cam_dir(num), "calibration")
-    rvec = np.load(os.path.join(
-        load_path, "rvec.npy"), allow_pickle=True)
-    tvec = np.load(os.path.join(
-        load_path, "tvec.npy"), allow_pickle=True)
-    return rvec, tvec
+    return conf.load_extr_calib(num)
 
 
 def calibrate_and_save_extr(num, pattern_size, stride_len):
@@ -265,8 +247,9 @@ def calibrate_and_save_extr(num, pattern_size, stride_len):
 def get_extr_calibration_img(cam_num):
     """Gives frame number 1 from checkerboard.avi for a given camera number."""
     FRAME_TO_SELECT = 1
-    video = cv.VideoCapture(os.path.join(
-        "data", f"cam{cam_num}", "checkerboard.avi"))
+    vid_path = conf.extr_calib_vid_path(cam_num)
+    print(vid_path)
+    video = cv.VideoCapture(vid_path)
     return get_frame(video, FRAME_TO_SELECT)
 
 
@@ -282,7 +265,7 @@ def calibrate_intr_and_extr(
     WINDOW_SIZE = (2, 2)  # Set window size for subpix function
 
     if n_samples is not None:
-        cam_dir = config.get_cam_dir(num)
+        cam_dir = conf.get_cam_dir(num)
         vid_path = os.path.abspath(os.path.join(cam_dir, "intrinsics.avi"))
         detect_and_save_frames(vid_path, pattern_size,
                                n_samples, False, output_dirname=frame_dirname)
@@ -332,29 +315,29 @@ def draw_axes_from_zero(img, stride_len, mtx, dist, rvec, tvec, origin):
 
 
 def calibrate():
-    """Run calibration with configuration from config"""
-    for cam_num in config.CAMERAS:
-        if config.CALIB_INTR:
+    """Run calibration with confuration from config"""
+    for cam_num in conf.CAMERAS:
+        if conf.CALIB_INTR:
             calibrate_and_save_cam_calib_intr(
                 cam_num,
-                config.N_CALIB,
-                config.CHESS_DIMS,
-                config.MANUAL_INTERPOLATE_INTR,
-                config.SHOW_LIVE,
-                n_sample=config.N_SAMPLE
+                conf.N_CALIB,
+                conf.CHESS_DIMS,
+                conf.MANUAL_INTERPOLATE_INTR,
+                conf.SHOW_LIVE,
+                n_sample=conf.N_SAMPLE
             )
 
-        if config.CALIB_EXTR:
+        if conf.CALIB_EXTR:
             mtx, dist = load_intr_calibration(cam_num)
             rvec, tvec = calibrate_camera_extr(
-                cam_num, config.CHESS_DIMS, config.STRIDE_LEN)
+                cam_num, conf.CHESS_DIMS, conf.STRIDE_LEN)
             save_extrinsics(cam_num, rvec, tvec)
-            if config.PLOT_AXES:
+            if conf.PLOT_AXES:
                 img = get_extr_calibration_img(cam_num)
                 objpoints = get_chessboard_obj_points(
-                    config.CHESS_DIMS, config.STRIDE_LEN)
+                    conf.CHESS_DIMS, conf.STRIDE_LEN)
                 corners, _ = cv.projectPoints(objpoints, rvec, tvec, mtx, dist)
-                drawn = draw_axes(img, config.STRIDE_LEN, mtx,
+                drawn = draw_axes(img, conf.STRIDE_LEN, mtx,
                                   dist, rvec, tvec, corners)
                 cv.imshow("With axes", drawn)
                 cv.waitKey(0)
