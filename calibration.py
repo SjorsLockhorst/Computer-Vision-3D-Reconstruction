@@ -205,6 +205,7 @@ def calibrate_camera_extr(num, pattern_size, stride_len):
 
     mtx, dist = load_intr_calibration(num)
     img = get_extr_calibration_img(num)
+
     res, corners = interpolate_chessboard_with_perspective(
         img, pattern_size, window_size=WINDOW_SIZE)
     rvec, tvec = calibrate_extr(

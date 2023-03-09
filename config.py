@@ -15,6 +15,13 @@ class VoxelConfig():
 
     STRIDE_LEN = 115
     CHESS_DIMS = (8, 6)
+    VOXEL_X = 32
+    VOXEL_Y = 32
+    VOXEL_Z = 64
+
+    H_THRESH = 11
+    S_THRESH = 13
+    V_THRESH = 12
 
 # Intrinsic calibration tunable parameters
     CALIB_INTR = False
@@ -70,13 +77,16 @@ class VoxelConfig():
     def cutout_img_path(self, num):
         return os.path.abspath(os.path.join(self.get_cam_dir(num), f"image{num}.png"))
 
+    def lookup_table_path(self):
+        return os.path.abspath(os.path.join("data", "lookup_table.pickle"))
+
 
 class ClusteringConf():
     DATA_DIR = "clustering_data"
     CAM_DIR = "cam{}"
     CAMERAS = [1, 2, 3, 4]
     NUM_CAMS = len(CAMERAS)
-    CAM_RES = (488, 644)  # Resolution of all cameras
+    CAM_RES = (486, 644)  # Resolution of all cameras
 
     STRIDE_LEN = 115
     CHESS_DIMS = (8, 6)
@@ -87,6 +97,14 @@ class ClusteringConf():
     N_CALIB = 25  # Amount of images to use for intrinsic calibration
     MANUAL_INTERPOLATE_INTR = False  # Whether to use manual interpolate to fix images
     SHOW_LIVE = False  # Whether to show progress live
+
+    H_THRESH = 5
+    S_THRESH = 18
+    V_THRESH = 18
+
+    VOXEL_X = 50
+    VOXEL_Y = 50
+    VOXEL_Z = 32
 
 # Extrinsic calibration tunable parameters
     CALIB_EXTR = True
@@ -132,6 +150,10 @@ class ClusteringConf():
         calib_path = self.get_calib_dir(num)
         bg_model_path = os.path.join(calib_path, f"background_{num}.npy")
         return np.load(bg_model_path, allow_pickle=True)
+
+    def lookup_table_path(self):
+        return os.path.abspath(os.path.join("calibration", "lookup_table.pickle"))
+
 
 if ACTIVE_CONF == "voxel":
     conf = VoxelConfig()
