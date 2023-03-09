@@ -6,14 +6,14 @@ import cv2 as cv
 import glm
 import numpy as np
 
-from background import load_background_model, threshold_difference, substract_background
+from background import load_background_model, substract_background
 from calibration import (
     draw_axes_from_zero,
     get_frame,
     load_extr_calibration,
     load_intr_calibration,
 )
-from config import STRIDE_LEN, get_cam_dir, CAMERAS, CAM_RES
+from config import conf
 
 block_size = 1.0
 
@@ -37,7 +37,7 @@ def create_all_voxels():
     size_x = 32
     size_y = 32
     size_z = 64
-    scale_factor = STRIDE_LEN / scale 
+    scale_factor = conf.STRIDE_LEN / scale 
     voxel_block = np.zeros((size_x * size_y * size_z, 3))
 
     counter = 0
@@ -54,7 +54,7 @@ def create_all_voxels_set():
     size_x = 32
     size_y = 32
     size_z = 64
-    scale_factor = STRIDE_LEN / scale 
+    scale_factor = conf.STRIDE_LEN / scale 
     voxel_block = set()
 
     for x in range(size_x):
@@ -81,7 +81,7 @@ def create_lookup_table(reload=False):
     size_y = 32
     size_z = 64
 
-    max_y, max_x = CAM_RES
+    max_y, max_x = conf.CAM_RES
     total_voxels = size_x * size_y * size_z 
 
     to_include = np.ones(total_voxels).astype(bool)
@@ -90,13 +90,13 @@ def create_lookup_table(reload=False):
     included_voxels = create_all_voxels_set()
     lookup_table = defaultdict(dict)
 
-    for cam_num in CAMERAS:
+    for cam_num in conf.CAMERAS:
         mtx, dist = load_intr_calibration(cam_num)
         rvec, tvec = load_extr_calibration(cam_num)
 
         scaled_voxels = np.array(list(included_voxels))
 
-        scale_factor = STRIDE_LEN / scale 
+        scale_factor = conf.STRIDE_LEN / scale 
 
         # Make sure projection is done from the middle of voxel cube
         middle_of_voxels = scaled_voxels - scale_factor / 2
@@ -131,19 +131,21 @@ def draw_axes_on_image(cam_num, frame_id):
     mtx, dist = load_intr_calibration(cam_num)
     rvec, tvec = load_extr_calibration(cam_num)
     coords = cv.projectPoints(point, rvec, tvec, mtx, dist)[0].astype(int)
-    vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam_num), "video.avi")))
+    vid_dir = conf.main_vid_path(cam_num)
+    vid = cv.VideoCapture(vid_dir)
     img = get_frame(vid, frame_id)
     x_img, y_img = coords[0][0]
-    return draw_axes_from_zero(img, STRIDE_LEN, mtx, dist, rvec, tvec, (x_img, y_img))
+    return draw_axes_from_zero(img, conf.STRIDE_LEN, mtx, dist, rvec, tvec, (x_img, y_img))
 
 
 def plot_projection(cam_num, point):
     """Helper function for testing, draws a given 3d point in 2d image."""
-    rescaled_point = tuple(map(lambda x: x * STRIDE_LEN / scale, point))
+    rescaled_point = tuple(map(lambda x: x * conf.STRIDE_LEN / scale, point))
     mtx, dist = load_intr_calibration(cam_num)
     rvec, tvec = load_extr_calibration(cam_num)
     coords = cv.projectPoints(rescaled_point, rvec, tvec, mtx, dist)[0].astype(int)
-    vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam_num), "video.avi")))
+    vid_dir = conf.main_vid_path(cam_num)
+    vid = cv.VideoCapture(vid_dir)
     img = get_frame(vid, 2)
     x_img, y_img = coords[0][0]
     img = draw_axes_on_image(cam_num, 2)
@@ -163,9 +165,10 @@ def set_voxel_positions(width, height, depth):
     lookup_table = create_lookup_table()
     voxels_to_draw = set(lookup_table.keys())
 
-    for cam in CAMERAS:
+    for cam in conf.CAMERAS:
         bg_model = load_background_model(cam)
-        vid = cv.VideoCapture(os.path.abspath(os.path.join(get_cam_dir(cam), "video.avi")))
+        vid_dir = conf.main_vid_path(cam)
+        vid = cv.VideoCapture(vid_dir)
         length = vid.get(cv.CAP_PROP_FRAME_COUNT)
 
         img = get_frame(vid, frame % length)
@@ -178,16 +181,16 @@ def set_voxel_positions(width, height, depth):
     frame += 1
 
     # Put voxels in right scale and rearange axes for openGL
-    scale_factor = STRIDE_LEN / scale 
+    scale_factor = conf.STRIDE_LEN / scale 
     return [(x / scale_factor, -1 * z / scale_factor, y / scale_factor) for x, y, z in voxels_to_draw]
 
 def get_cam_positions():
     """Generates camera positions."""
 
     cam_positions = []
-    for cam in CAMERAS:
+    for cam in conf.CAMERAS:
         rvec, tvec = load_extr_calibration(cam)
-        tvec /= STRIDE_LEN / scale
+        tvec /= conf.STRIDE_LEN / scale
         # Calculate rotation matrix and camera position
         rot_mat = cv.Rodrigues(rvec)[0]
         cam_pos = -np.matrix(rot_mat).T * np.matrix(tvec)
@@ -201,7 +204,7 @@ def get_cam_rotation_matrices(verbose=False):
     """Rotates each camera appropriatly"""
 
     cam_angles = []
-    for i in CAMERAS:
+    for i in conf.CAMERAS:
         rvec, tvec = load_extr_calibration(i)
         rot_m = cv.Rodrigues(rvec)[0]
         if verbose:

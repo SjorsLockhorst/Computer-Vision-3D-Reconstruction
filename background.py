@@ -9,17 +9,17 @@ from tqdm import tqdm
 import itertools
 
 from calibration import get_frame
-from config import get_cam_dir, CAMERAS
+from config import conf
 
 
 def create_background_model(cam_num):
     """Create a background model for a given camera and save it to disk."""
-    cam_dir = get_cam_dir(cam_num)
-    video_path = os.path.abspath(os.path.join(cam_dir, "background.avi"))
-    calib_dir = os.path.abspath(os.path.join(cam_dir, "calibration"))
+    background_path = conf.background_vid_path(cam_num)
+    print(background_path)
+    calib_path = conf.get_calib_dir(cam_num)
 
     # Load in background video for camera
-    video = cv.VideoCapture(video_path)
+    video = cv.VideoCapture(background_path)
     # Check if video opened successfully
     if not video.isOpened():
         print("Error opening video file")
@@ -42,16 +42,15 @@ def create_background_model(cam_num):
 
     gaussian = np.stack((mean_background_hsv, std_background_hsv), axis=2)
 
-    np.save(os.path.join(calib_dir, "background"), gaussian)
+    save_path = os.path.join(calib_path, f"background_{cam_num}")
+    print(save_path)
+    np.save(save_path, gaussian)
     return gaussian
 
 
 def load_background_model(cam_num):
     """Load background model from disk for a certain camera."""
-    cam_dir = get_cam_dir(cam_num)
-    backgound_model_path = os.path.join(
-        cam_dir, "calibration", "background.npy")
-    return np.load(backgound_model_path, allow_pickle=True)
+    return conf.load_bg_model(cam_num)
 
 
 def threshold_difference(diff, thresholds):
@@ -74,7 +73,8 @@ def substract_background(
     thresholds,
     erode_kernel=(3, 3),
     dilate_kernel=(2,4),
-    gaussian_kernel=(5,5)
+    gaussian_kernel=(3,3),
+    n_biggest=1,
 ):
     """Substract background from an image given a background model and parameters."""
 
@@ -88,21 +88,21 @@ def substract_background(
     h, s, v = thresholds
     full_mask = threshold_difference(std_diff, thresholds)
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-
-    kernel = np.ones(dilate_kernel, np.uint8)
-    full_mask = cv.dilate(full_mask, kernel)
-
-    kernel = np.ones(erode_kernel, np.uint8)
-    full_mask = cv.erode(full_mask, kernel)
-
+    
+    #
     full_mask = cv.GaussianBlur(full_mask, gaussian_kernel, 0)
 
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (4, 4))
+    full_mask = cv.dilate(full_mask, kernel, iterations=1)
+    #
     new_mask = np.zeros(gray.shape)
     contours, _ = cv.findContours(
         full_mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-    biggest = sorted(contours, key=cv.contourArea, reverse=True)[0]
+    # biggest = sorted(contours, key=cv.contourArea, reverse=True)[:n_biggest]
+    biggest = [contour for contour in contours if cv.contourArea(contour) > 5000]
 
-    cv.drawContours(new_mask, [biggest], 0, 1, -1)
+    # cv.drawContours(new_mask, biggest, -1, 1, -1)
+    full_mask = cv.fillPoly(new_mask, biggest, 1)
     full_mask = new_mask
 
     background_removed = np.uint8(full_mask * gray)
@@ -154,15 +154,14 @@ def find_optimal_background_substraction(
     models = []
     images = []
     gold_labels = []
-    for cam in CAMERAS:
+    for cam in conf.CAMERAS:
         create_background_model(cam)
         bg_model = load_background_model(cam)
-        vid = cv.VideoCapture(os.path.abspath(
-            os.path.join(get_cam_dir(cam), "video.avi")))
+        vid_path = conf.main_vid_path(cam)
+        vid = cv.VideoCapture(vid_path)
         img = get_frame(vid, frame_id)
         images.append(img)
-        cam_dir = get_cam_dir(cam)
-        cutout_path = os.path.abspath(os.path.join(cam_dir, f"image{cam}.png"))
+        cutout_path = conf.cutout_img_path(cam)
         cutout = cv.imread(cutout_path)
 
         hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
@@ -193,7 +192,7 @@ def find_optimal_background_substraction(
 
         error = 0
         masks = []
-        for cam_num in CAMERAS:
+        for cam_num in conf.CAMERAS:
             std_diff = models[cam_num - 1]
             cutout = gold_labels[cam_num - 1]
             img = images[cam_num - 1]
@@ -222,33 +221,37 @@ def find_optimal_background_substraction(
     return best_masks, (best_h, best_s, best_v), (best_erode, best_dilate, best_guassian)
 
 
-def show_background_substraction():
+def show_background_substraction(cam):
     """Shows final background substraction."""
-    for cam in CAMERAS:
-        bg_model = load_background_model(cam)
-        vid = cv.VideoCapture(os.path.abspath(
-            os.path.join(get_cam_dir(cam), "video.avi")))
-        img = get_frame(vid, 1)
+    bg_model = load_background_model(cam)
+    vid_path = conf.main_vid_path(cam)
+    vid = cv.VideoCapture(vid_path)
+    length = vid.get(cv.CAP_PROP_FRAME_COUNT)
+    for frame_id in range(int(length)):
+        img = get_frame(vid, frame_id)
         background_removed = substract_background(
-            bg_model, img, (11, 13, 12))[0]
+            bg_model, img, (5, 18, 18), n_biggest=4)[0]
         cv.imshow("test", background_removed)
-        cv.waitKey(0)
+        cv.waitKey(1)
 
 
 if __name__ == "__main__":
-    h_range = range(0, 25)
-    s_range = range(0, 25)
-    v_range = range(0, 85)
-
-    erode_combs = itertools.product(range(1, 4), repeat=2)
-    dilate_combs = itertools.product(range(1, 8), repeat=2)
-    gaussian_combs = [(3, 3), (5, 5), (7, 7)]
-
-    erode_combs = itertools.product(range(1, 4), repeat=2)
-    dilate_combs = itertools.product(range(1, 8), repeat=2)
-    gaussian_combs = [(3, 3)]
-
-    background_masks, best_hsv, best_kernels = find_optimal_background_substraction(
-        1, h_range, s_range, v_range, erode_combs, dilate_combs, gaussian_combs)
-    print(best_hsv)
-    print(best_kernels)
+    # h_range = range(0, 25)
+    # s_range = range(0, 25)
+    # v_range = range(0, 85)
+    #
+    # erode_combs = itertools.product(range(1, 4), repeat=2)
+    # dilate_combs = itertools.product(range(1, 8), repeat=2)
+    # gaussian_combs = [(3, 3), (5, 5), (7, 7)]
+    #
+    # erode_combs = itertools.product(range(1, 4), repeat=2)
+    # dilate_combs = itertools.product(range(1, 8), repeat=2)
+    # gaussian_combs = [(3, 3)]
+    #
+    # background_masks, best_hsv, best_kernels = find_optimal_background_substraction(
+    #     1, h_range, s_range, v_range, erode_combs, dilate_combs, gaussian_combs)
+    # print(best_hsv)
+    # print(best_kernels)
+    for cam in conf.CAMERAS:
+        create_background_model(cam)
+    show_background_substraction(1)

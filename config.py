@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 
-ACTIVE_CONF = "voxel"
+ACTIVE_CONF = "clustering"
 
 
 class VoxelConfig():
@@ -53,6 +53,11 @@ class VoxelConfig():
         tvec = np.load(os.path.join(base_path, "tvec.npy"), allow_pickle=True)
         return rvec, tvec
 
+    def load_bg_model(self, num):
+        calib_path = self.get_calib_dir(num)
+        bg_model_path = os.path.join(calib_path, f"background_{num}.npy")
+        return np.load(bg_model_path, allow_pickle=True)
+
     def extr_calib_vid_path(self, num):
         return os.path.join(self.get_cam_dir(num), "checkerboard.avi")
 
@@ -61,6 +66,9 @@ class VoxelConfig():
 
     def main_vid_path(self, num):
         return os.path.join(self.get_cam_dir(num), "video.avi")
+
+    def cutout_img_path(self, num):
+        return os.path.abspath(os.path.join(self.get_cam_dir(num), f"image{num}.png"))
 
 
 class ClusteringConf():
@@ -105,9 +113,8 @@ class ClusteringConf():
 
     def _get_vid(self, num, dirname):
         path = os.path.join(self.DATA_DIR, dirname)
-        file = os.listdir(path)[num - 1]
+        file = f"{num}.avi"
         return os.path.join(path, file)
-
 
     def extr_calib_vid_path(self, num):
         DIRNAME = "extrinsics"
@@ -121,6 +128,10 @@ class ClusteringConf():
         DIRNAME = "video"
         return self._get_vid(num, DIRNAME)
 
+    def load_bg_model(self, num):
+        calib_path = self.get_calib_dir(num)
+        bg_model_path = os.path.join(calib_path, f"background_{num}.npy")
+        return np.load(bg_model_path, allow_pickle=True)
 
 if ACTIVE_CONF == "voxel":
     conf = VoxelConfig()
