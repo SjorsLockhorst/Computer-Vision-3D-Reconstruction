@@ -217,8 +217,8 @@ def save_extrinsics(cam_num, rvec, tvec):
     calib_path = conf.get_calib_dir(cam_num)
     if not os.path.exists(calib_path):
         os.mkdir(calib_path)
-    np.save(os.path.join(calib_path, "rvec"), rvec)
-    np.save(os.path.join(calib_path, "tvec"), tvec)
+    np.save(os.path.join(calib_path, f"rvec_{cam_num}"), rvec)
+    np.save(os.path.join(calib_path, f"tvec_{cam_num}"), tvec)
 
 
 def load_all_calibration(cam_num):
