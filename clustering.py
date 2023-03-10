@@ -1,6 +1,7 @@
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
+from sklearn.mixture import GaussianMixture
 
 from assignment import get_voxels_in_world_coods
 from config import conf
@@ -61,6 +62,7 @@ def get_voxel_colors(voxels, frame, base_cam=1, show_cluster=False, above_z_rati
     vid_path = conf.main_vid_path(base_cam)
     vid = cv.VideoCapture(vid_path)
     img = get_frame(vid, frame)
+    hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
 
     # Load calibration
     mtx, dist = conf.load_intr_calib(base_cam)
@@ -76,10 +78,10 @@ def get_voxel_colors(voxels, frame, base_cam=1, show_cluster=False, above_z_rati
     colors = np.zeros((squeezed_points.shape[0], 3))
 
     # Find color of each pixel
-    mask = np.zeros((img.shape[0], img.shape[1]))
+    mask = np.zeros((hsv.shape[0], hsv.shape[1]))
     for idx, point in enumerate(squeezed_points):
         x, y = point.astype(int)
-        bgr = img[y][x]
+        bgr = hsv[y][x]
         colors[idx] = bgr
         mask[y][x] = 1
 
@@ -87,6 +89,7 @@ def get_voxel_colors(voxels, frame, base_cam=1, show_cluster=False, above_z_rati
         cv.imshow("Cluster", mask)
         cv.waitKey(0)
     return colors
+
 
 def test_colors():
     frame = 1
@@ -115,5 +118,17 @@ def test_colors():
 
 
 if __name__ == "__main__":
-    test_colors()
+    frame = 1
+    clusters, centers = cluster_voxels(frame)
+    CAM_NUM = 3
+    cluster_colors = [get_voxel_colors(
+        cluster, frame, base_cam=CAM_NUM) for cluster in clusters]
 
+    init_means = [cluster.mean(axis=0) for cluster in cluster_colors]
+
+    all_clusters = np.concatenate(cluster_colors)
+
+    gmm = GaussianMixture(n_components=4, covariance_type='spherical',
+                          max_iter=100_000, tol=1e-6, means_init=init_means)
+    gmm.fit(all_clusters)
+    print(gmm.means_)
