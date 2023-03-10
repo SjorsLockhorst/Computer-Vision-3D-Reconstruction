@@ -105,7 +105,7 @@ def substract_background(
     full_mask = cv.fillPoly(new_mask, biggest, 1)
     full_mask = new_mask
 
-    background_removed = np.uint8(full_mask * gray)
+    background_removed = np.uint8(full_mask[:, :, None] * img)
 
     return background_removed, full_mask
 

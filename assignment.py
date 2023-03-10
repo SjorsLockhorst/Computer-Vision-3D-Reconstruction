@@ -33,13 +33,26 @@ def generate_grid(width, depth):
     return data
 
 
-def create_all_voxels_set():
+def create_clustering_voxel_set():
     """Create all voxels as a set"""
     scale_factor = conf.STRIDE_LEN / scale
     voxel_block = set()
 
     for x in range(-conf.VOXEL_X // 2, conf.VOXEL_X // 2):
-        for y in range(-conf.VOXEL_Y // 2, conf.VOXEL_Y // 2 + 50):
+        for y in range(-conf.VOXEL_Y // 2, conf.VOXEL_Y):
+            for z in range(conf.VOXEL_Z):
+                voxel_block.add(
+                    (x * scale_factor, y * scale_factor, -z * scale_factor))
+
+    return voxel_block
+
+def create_all_voxels_set():
+    """Create all voxels as a set"""
+    scale_factor = conf.STRIDE_LEN / scale
+    voxel_block = set()
+
+    for x in range(conf.VOXEL_X):
+        for y in range(conf.VOXEL_X):
             for z in range(conf.VOXEL_Z):
                 voxel_block.add(
                     (x * scale_factor, y * scale_factor, -z * scale_factor))
@@ -47,7 +60,7 @@ def create_all_voxels_set():
     return voxel_block
 
 
-def create_lookup_table(reload=False, optim=False):
+def create_lookup_table(reload=False, optim=False, voxel_generator = create_all_voxels_set):
     """
     Create lookup table with mapping of voxel world position to image coordinates per 
     camera.
@@ -64,7 +77,7 @@ def create_lookup_table(reload=False, optim=False):
     # to_include = np.ones(total_voxels).astype(bool)
 
     # Init so that first camera has access to all voxels
-    included_voxels = create_all_voxels_set()
+    included_voxels = voxel_generator()
     lookup_table = defaultdict(dict)
 
     for cam_num in conf.CAMERAS:
@@ -135,10 +148,7 @@ def plot_projection(cam_num, point):
     cv.waitKey(0)
 
 
-def set_voxel_positions(width, height, depth):
-    """Calculate final voxel array"""
-    global frame  # Frame which to show
-
+def generate_voxels(width, heigth, depth, frame):
     lookup_table = create_lookup_table()
     voxels_to_draw = set(lookup_table.keys())
 
@@ -146,9 +156,8 @@ def set_voxel_positions(width, height, depth):
         bg_model = load_background_model(cam)
         vid_dir = conf.main_vid_path(cam)
         vid = cv.VideoCapture(vid_dir)
-        length = vid.get(cv.CAP_PROP_FRAME_COUNT)
 
-        img = get_frame(vid, frame % length)
+        img = get_frame(vid, frame)
         mask = substract_background(
             bg_model, img, (conf.H_THRESH, conf.S_THRESH, conf.V_THRESH), n_biggest=4)[1]
         is_in_mask = in_mask(lookup_table, cam, mask)
@@ -156,10 +165,23 @@ def set_voxel_positions(width, height, depth):
         # Make sure that only voxels that are already in all previous masks are added
         voxels_to_draw = voxels_to_draw & is_in_mask
 
-    frame += 100
 
+    return list(voxels_to_draw)
+
+
+def get_voxels_in_world_coods(width, height, depth, frame):
+    voxels = generate_voxels(width, height, depth, frame)
+    return np.array(voxels)
+
+def set_voxel_positions(width, height, depth, opengl=True):
+    """Calculate final voxel array"""
+    global frame
+
+    voxels_to_draw = generate_voxels(width, height, depth, frame) 
     # Put voxels in right scale and rearange axes for openGL
     scale_factor = conf.STRIDE_LEN / scale
+
+    frame += 100
     return [
         (x / scale_factor, -1 * z / scale_factor, y / scale_factor)
         for x, y, z in voxels_to_draw
@@ -221,5 +243,5 @@ def in_mask(lookup_table, cam_num, mask):
 
 
 if __name__ == "__main__":
-    create_lookup_table(reload=True)
+    create_lookup_table(reload=True, voxel_generator=create_clustering_voxel_set)
     # set_voxel_positions(512, 256, 512)

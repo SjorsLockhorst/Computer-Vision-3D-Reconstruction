@@ -104,7 +104,7 @@ class ClusteringConf():
 
     VOXEL_X = 50
     VOXEL_Y = 50
-    VOXEL_Z = 32
+    VOXEL_Z = 40
 
 # Extrinsic calibration tunable parameters
     CALIB_EXTR = True
