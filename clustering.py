@@ -2,39 +2,118 @@ import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
 
-def Kmeans_clustering(voxels_to_draw): # rescaled and rearanged axis for openGL, nu lijst tuples x, y, z
-    voxels_array = np.array(voxels_to_draw)
-    x_y_points = voxels_array[:,:2]
-    Z = np.float32(x_y_points)
+from assignment import get_voxels_in_world_coods
+from config import conf
+from calibration import get_frame
+from background import substract_background
+
+
+def kmeans_clustering(voxel_arr, plot=False):
+    """Preform k-means clustering on voxels."""
+
+    # Select only x y points for voxel
+    x_y_points = voxel_arr[:, :2].astype("float32")
+
+    # Set criteria for algorithm
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 10, 1.0)
-    ret, label, center = cv.kmeans(Z,4,None,criteria,10,cv.KMEANS_RANDOM_CENTERS)
-    
-    A = Z[label.ravel()==0]
-    B = Z[label.ravel()==1]
-    C = Z[label.ravel()==2]
-    D = Z[label.ravel()==3] 
+
+    # Run k-means
+    ret, labels, centers = cv.kmeans(
+        x_y_points, 4, None, criteria, 10, cv.KMEANS_RANDOM_CENTERS)
+
+    # If couldn't cluster, raise exception
+    if not ret:
+        raise Exception("Couldn't cluster!!!")
+
+    # Use labels to seperate voxels into found clusters
+    flattened_labels = labels.ravel()
+    cluster_masks = [flattened_labels == i for i in range(4)]
+    clusters = [voxel_arr[mask] for mask in cluster_masks]
+
     # Plot the data
-    plt.scatter(A[:,0],A[:,1])
-    plt.scatter(B[:,0],B[:,1],c = 'r')
-    plt.scatter(C[:,0],C[:,1],c = 'g')
-    plt.scatter(D[:,0],D[:,1],c = 'b')
-    plt.scatter(center[:,0],center[:,1],s = 80,c = 'y', marker = 's')
-    plt.xlabel('Height'),plt.ylabel('Weight')
+    if plot:
+        a, b, c, d = [cluster[:, 0:2] for cluster in clusters]
+        plt.scatter(a[:, 0], a[:, 1])
+        plt.scatter(b[:, 0], b[:, 1], c='r')
+        plt.scatter(c[:, 0], c[:, 1], c='g')
+        plt.scatter(d[:, 0], d[:, 1], c='b')
+        plt.scatter(centers[:, 0], centers[:, 1], s=80, c='y', marker='s')
+        plt.xlabel('x'), plt.ylabel('y')
+        ax = plt.gca()
+        ax.set_xlim((-2000, 2000))
+        ax.set_ylim((-200, 3000))
+        plt.pause(0.05)
+
+    return clusters, centers
+
+
+def cluster_voxels(frame, plot=False):
+    """Cluster voxels given a certain frame."""
+    points = get_voxels_in_world_coods(512, 256, 512, frame)
+    voxel_arr = np.array(points)
+    return kmeans_clustering(voxel_arr, plot=plot)
+
+
+def get_voxel_colors(voxels, frame, base_cam=1, show_cluster=False, above_z_ratio=1/2):
+    """Get colors of a certain cluster"""
+
+    # Load image from video
+    vid_path = conf.main_vid_path(base_cam)
+    vid = cv.VideoCapture(vid_path)
+    img = get_frame(vid, frame)
+
+    # Load calibration
+    mtx, dist = conf.load_intr_calib(base_cam)
+    rvec, tvec = conf.load_extr_calib(base_cam)
+
+    voxels = voxels[voxels[:, 2] < voxels[:, 2].min(axis=0) * above_z_ratio]
+    projected_points = cv.projectPoints(voxels, rvec, tvec, mtx, dist)[0]
+
+    # Remove aribtrary dimension
+    squeezed_points = np.squeeze(projected_points)
+
+    # Array to store each color
+    colors = np.zeros((squeezed_points.shape[0], 3))
+
+    # Find color of each pixel
+    mask = np.zeros((img.shape[0], img.shape[1]))
+    for idx, point in enumerate(squeezed_points):
+        x, y = point.astype(int)
+        bgr = img[y][x]
+        colors[idx] = bgr
+        mask[y][x] = 1
+
+    if show_cluster:
+        cv.imshow("Cluster", mask)
+        cv.waitKey(0)
+    return colors
+
+def test_colors():
+    frame = 1
+    clusters, centers = cluster_voxels(frame, plot=True)
     plt.show()
-    return ret, label, center
+    CAM_NUM = 3
+    cluster_colors = [get_voxel_colors(
+        cluster, frame, base_cam=CAM_NUM, show_cluster=True) for cluster in clusters]
+
+    vid_path = conf.main_vid_path(CAM_NUM)
+    vid = cv.VideoCapture(vid_path)
+    img = get_frame(vid, frame)
+
+    bg_model = conf.load_bg_model(CAM_NUM)
+
+    bg_rem, _ = substract_background(
+        bg_model, img, (conf.H_THRESH, conf.S_THRESH, conf.V_THRESH), n_biggest=4)
+    cv.imshow("no bg", bg_rem)
+    cv.waitKey(0)
+    for idx, colors in enumerate(cluster_colors):
+        blank_image = np.zeros((800, 800, 3))
+        blank_image[:, :, :] = colors.mean(axis=0)
+        print(blank_image.shape)
+        cv.imshow(f"Average color cluster {idx}", blank_image.astype("uint8"))
+        cv.waitKey(0)
 
 
-points_per_cluster = 10
-
-cluster_1 = np.random.randn(points_per_cluster, 3) + [0, 0, 0]
-cluster_2 = np.random.randn(points_per_cluster, 3) + [5, 5, 5]
-cluster_3 = np.random.randn(points_per_cluster, 3) + [5, 0, 0]
-cluster_4 = np.random.randn(points_per_cluster, 3) + [0, 5, 0]
-cluster_1 = np.array(cluster_1, dtype=int)
-cluster_2 = np.array(cluster_2, dtype=int)
-cluster_3 = np.array(cluster_3, dtype=int)
-cluster_4 = np.array(cluster_4, dtype=int)
-points = np.concatenate([cluster_1, cluster_2, cluster_3, cluster_4], axis=0)
-
-ret, label, center = Kmeans_clustering(points)
+if __name__ == "__main__":
+    test_colors()
 
