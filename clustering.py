@@ -198,7 +198,6 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
 
         if len(set(preds)) != len(preds):
             continue
-
         for idx, center in enumerate(centers):
             steps[idx].append(center)
         if show_cluster_plot:
@@ -247,7 +246,7 @@ if __name__ == "__main__":
     # bg_models = []
     # for cam in conf.CAMERAS:
     #     bg_models.append(create_new_bg_model(cam))
-    find_trajectory(show_cluster_plot=True)
+    find_trajectory(*[True]* 4)
     # frame_cam_map = {1:1, 2:480, 3:96, 4:528}
     # for cam, frame in frame_cam_map.items():
     #     cluster_and_create_color_model(bg_models, frame=frame, base_cam=cam)
