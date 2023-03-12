@@ -1,10 +1,30 @@
+from config import conf
+
 import numpy as np
 from sklearn.mixture import GaussianMixture
 
-def fit_gaussian(HSV): # input is a list of HSV values for each pixel in shirt
-    gmm = GaussianMixture(n_components=2, covariance_type='full')
-    gmm.fit(HSV)
-    return gmm
+# input is a list of HSV values for each pixel
+
+
+def fit_color_model(cluster_hsv):
+    gms = []
+    for hsv in cluster_hsv:
+        gm = GaussianMixture(n_components=1, covariance_type='spherical', random_state=conf.RANDOM_STATE)
+        gm.fit(hsv)
+        gms.append(gm)
+
+    return gms
+
+# TODO: Make sure this takes into account multiple clusters, use some sort of softmax
+
+
+def predict_color_model(gms, hsv_arr):
+    scores = []
+    for gm in gms:
+        score = gm.score(hsv_arr)
+        scores.append(score)
+
+    return np.array(scores)
 
 
 if __name__ == "__main__":
@@ -12,7 +32,7 @@ if __name__ == "__main__":
     hsv_array[..., 0] *= 360
     n_pixels = hsv_array.shape[0] * hsv_array.shape[1]
     hsv_array_2d = hsv_array.reshape(n_pixels, 3)
-    gmm = fit_gaussian(hsv_array_2d)
+    gmm = fit_color_model(hsv_array_2d)
     labels = gmm.predict_proba(hsv_array_2d)
     print(labels.min())
 

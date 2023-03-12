@@ -1,15 +1,19 @@
+import pickle
+
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
-from sklearn.mixture import GaussianMixture
+from tqdm import tqdm
+from scipy.special import softmax
 
 from assignment import get_voxels_in_world_coods
 from config import conf
 from calibration import get_frame
-from background import substract_background
+from background import create_new_bg_model, substract_background_new
+from color_model import fit_color_model, predict_color_model
 
 
-def kmeans_clustering(voxel_arr, plot=False):
+def kmeans_clustering(voxel_arr, n_clusters = 4):
     """Preform k-means clustering on voxels."""
 
     # Select only x y points for voxel
@@ -20,7 +24,7 @@ def kmeans_clustering(voxel_arr, plot=False):
 
     # Run k-means
     ret, labels, centers = cv.kmeans(
-        x_y_points, 4, None, criteria, 10, cv.KMEANS_RANDOM_CENTERS)
+        x_y_points, n_clusters, None, criteria, 10, cv.KMEANS_RANDOM_CENTERS)
 
     # If couldn't cluster, raise exception
     if not ret:
@@ -28,34 +32,37 @@ def kmeans_clustering(voxel_arr, plot=False):
 
     # Use labels to seperate voxels into found clusters
     flattened_labels = labels.ravel()
-    cluster_masks = [flattened_labels == i for i in range(4)]
+    cluster_masks = [flattened_labels == i for i in range(n_clusters)]
     clusters = [voxel_arr[mask] for mask in cluster_masks]
 
     # Plot the data
-    if plot:
-        a, b, c, d = [cluster[:, 0:2] for cluster in clusters]
-        plt.scatter(a[:, 0], a[:, 1])
-        plt.scatter(b[:, 0], b[:, 1], c='r')
-        plt.scatter(c[:, 0], c[:, 1], c='g')
-        plt.scatter(d[:, 0], d[:, 1], c='b')
-        plt.scatter(centers[:, 0], centers[:, 1], s=80, c='y', marker='s')
-        plt.xlabel('x'), plt.ylabel('y')
-        ax = plt.gca()
-        ax.set_xlim((-2000, 2000))
-        ax.set_ylim((-200, 3000))
-        plt.pause(0.05)
-
     return clusters, centers
 
 
-def cluster_voxels(frame, plot=False):
+def plot_clusters(clusters, centers):
+    x_y_clusters = [cluster[:, 0:2] for cluster in clusters]
+    plt.clf()
+    for cluster in x_y_clusters:
+        plt.scatter(cluster[:, 0], cluster[:, 1])
+    plt.scatter(centers[:, 0], centers[:, 1], s=80, c='y', marker='s')
+    plt.xlabel('x'), plt.ylabel('y')
+    ax = plt.gca()
+    ax.set_xlim((-2000, 2000))
+    ax.set_ylim((-2000, 5000))
+    plt.pause(0.05)
+
+
+def cluster_voxels(frame, bg_models, verbose=False):
     """Cluster voxels given a certain frame."""
-    points = get_voxels_in_world_coods(512, 256, 512, frame)
+    points, masks, contours = get_voxels_in_world_coods(
+        512, 256, 512, frame, bg_models, verbose=verbose)
     voxel_arr = np.array(points)
-    return kmeans_clustering(voxel_arr, plot=plot)
+    camera_contour_lengths = np.array([len(contour) for contour in contours])
+    # return kmeans_clustering(voxel_arr, n_clusters=camera_contour_lengths.max())
+    return (*kmeans_clustering(voxel_arr, n_clusters=4), camera_contour_lengths)
 
 
-def get_voxel_colors(voxels, frame, base_cam=1, show_cluster=False, above_z_ratio=1/2):
+def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False, above_z_ratio=1/2, below_z_ratio=1/10):
     """Get colors of a certain cluster"""
 
     # Load image from video
@@ -68,7 +75,11 @@ def get_voxel_colors(voxels, frame, base_cam=1, show_cluster=False, above_z_rati
     mtx, dist = conf.load_intr_calib(base_cam)
     rvec, tvec = conf.load_extr_calib(base_cam)
 
-    voxels = voxels[voxels[:, 2] < voxels[:, 2].min(axis=0) * above_z_ratio]
+    min_z = voxels[:, 2].min(axis=0)
+    pants_cutof = voxels[:, 2] < min_z * above_z_ratio
+    head_cutof = voxels[:, 2] > min_z - min_z * below_z_ratio
+    voxels = voxels[pants_cutof & head_cutof]
+
     projected_points = cv.projectPoints(voxels, rvec, tvec, mtx, dist)[0]
 
     # Remove aribtrary dimension
@@ -91,9 +102,10 @@ def get_voxel_colors(voxels, frame, base_cam=1, show_cluster=False, above_z_rati
     return colors
 
 
-def test_colors():
+def test_colors(bg_models):
     frame = 1
-    clusters, centers = cluster_voxels(frame, plot=True)
+    clusters, centers = cluster_voxels(frame, bg_models)
+    plot_clusters(clusters, centers)
     plt.show()
     CAM_NUM = 3
     cluster_colors = [get_voxel_colors(
@@ -103,32 +115,139 @@ def test_colors():
     vid = cv.VideoCapture(vid_path)
     img = get_frame(vid, frame)
 
-    bg_model = conf.load_bg_model(CAM_NUM)
-
-    bg_rem, _ = substract_background(
-        bg_model, img, (conf.H_THRESH, conf.S_THRESH, conf.V_THRESH), n_biggest=4)
+    bg_rem = substract_background_new(img, bg_models[CAM_NUM - 1])
     cv.imshow("no bg", bg_rem)
     cv.waitKey(0)
     for idx, colors in enumerate(cluster_colors):
         blank_image = np.zeros((800, 800, 3))
         blank_image[:, :, :] = colors.mean(axis=0)
-        print(blank_image.shape)
         cv.imshow(f"Average color cluster {idx}", blank_image.astype("uint8"))
         cv.waitKey(0)
 
 
-if __name__ == "__main__":
-    frame = 1
-    clusters, centers = cluster_voxels(frame)
-    CAM_NUM = 3
+def cluster_and_create_color_model(bg_models, frame=1, base_cam=3):
+
+    clusters, centers = cluster_voxels(frame, bg_models)
     cluster_colors = [get_voxel_colors(
-        cluster, frame, base_cam=CAM_NUM) for cluster in clusters]
+        cluster, frame, base_cam=base_cam) for cluster in clusters]
 
-    init_means = [cluster.mean(axis=0) for cluster in cluster_colors]
+    gm = fit_color_model(cluster_colors)
 
-    all_clusters = np.concatenate(cluster_colors)
+    color_model_path = conf.color_model_path(base_cam)
+    with open(color_model_path, "wb") as file:
+        pickle.dump(gm, file)
+    return gm
 
-    gmm = GaussianMixture(n_components=4, covariance_type='spherical',
-                          max_iter=100_000, tol=1e-6, means_init=init_means)
-    gmm.fit(all_clusters)
-    print(gmm.means_)
+
+def find_and_classify_people(frame_id, bg_models, color_model, base_cam, verbose=False):
+    clusters, centers, contour_lens = cluster_voxels(
+        frame_id, bg_models, verbose=verbose)
+
+    preds = []
+    cluster_colors = []
+    all_scores = []
+
+    for idx, cam in enumerate(conf.CAMERAS):
+        cam_scores = []
+        for cluster, center in zip(clusters, centers):
+            colors = get_voxel_colors(cluster, frame_id, base_cam=cam)
+            scores = predict_color_model(color_model, colors)
+            cluster_colors.append(colors)
+            cam_scores.append(scores)
+        all_scores.append(cam_scores)
+
+    avg_preds = np.average(all_scores, axis=0, weights=contour_lens**2)
+    avg_preds = softmax(avg_preds, axis=0)
+    avg_preds = softmax(avg_preds, axis=1)
+    preds = np.argmax(avg_preds, axis=1)
+
+    if verbose:
+        print(f"Predicted classes: {preds}")
+
+    sorted_index = np.array(preds).argsort()
+    return np.array(clusters)[sorted_index], centers[sorted_index], np.array(cluster_colors)[sorted_index], preds
+
+
+# TODO: Make use of bg subtraction to know if the camera sees 4 seperate entities or not
+# TODO: Make a very verbose version that shows for each frame:
+# 1. Clustering of voxels
+# 2. Average color of each voxel
+# 3. Predicted color based on color model
+
+def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame=False, show_colors = False):
+    CAM = 4
+    color_model = conf.load_color_model(CAM)
+    HALFWAY_Z = -800
+    mtx, dist = conf.load_intr_calib(CAM)
+    rvec, tvec = conf.load_extr_calib(CAM)
+    vid_path = conf.main_vid_path(CAM)
+    vid = cv.VideoCapture(vid_path)
+    length = int(vid.get(cv.CAP_PROP_FRAME_COUNT))
+
+    bg_models = []
+    for cam in conf.CAMERAS:
+        bg_models.append(create_new_bg_model(cam))
+
+    steps = [[], [], [], []]
+    for frame_id in tqdm(range(0, length, 4)):
+        img = get_frame(vid, frame_id)
+        if img is None:
+            break
+        clusters, centers, colors, preds = find_and_classify_people(
+            frame_id, bg_models, color_model, CAM, verbose=verbose)
+
+        if len(set(preds)) != len(preds):
+            continue
+
+        for idx, center in enumerate(centers):
+            steps[idx].append(center)
+        if show_cluster_plot:
+            plot_clusters(clusters, centers)
+
+        if show_colors:
+            _, biggest = substract_background_new(img, bg_models[CAM - 1])
+
+            new_mask = np.zeros(img.shape, dtype="uint8")
+            three_d_centers = np.zeros((centers.shape[0], centers.shape[1] + 1))
+            three_d_centers[:, :2] = centers
+            three_d_centers[:, 2] = HALFWAY_Z
+            projected_centers, _ = cv.projectPoints(three_d_centers, rvec, tvec, mtx, dist)
+            projected_centers = np.squeeze(projected_centers)
+            for center, color in zip(projected_centers, colors):
+                x, y = map(int, center)
+                for contour in biggest:
+                    if cv.pointPolygonTest(contour, center, False) > 0:
+                        cv.fillPoly(new_mask, [contour], color.mean(axis=0))
+
+            cv.imshow("new_mask", new_mask)
+
+
+        if show_reference_frame:
+            img = get_frame(vid, frame_id)
+            cv.imshow("Frame of reference cam", img)
+        if show_colors or show_reference_frame or verbose:
+            if cv.waitKey(1) == ord("q"):
+                cv.destroyAllWindows()
+
+
+    plt.clf()
+    a, b, c, d = [np.array(step) for step in steps]
+    print(len(a), len(b), len(c), len(d))
+    plt.scatter(a[:, 0], a[:, 1])
+    plt.scatter(b[:, 0], b[:, 1], c='r')
+    plt.scatter(c[:, 0], c[:, 1], c='g')
+    plt.scatter(d[:, 0], d[:, 1], c='b')
+    plt.xlabel('x'), plt.ylabel('y')
+    ax = plt.gca()
+    ax.set_xlim((-2000, 2000))
+    ax.set_ylim((-1000, 3000))
+    plt.show()
+    #
+if __name__ == "__main__":
+    # bg_models = []
+    # for cam in conf.CAMERAS:
+    #     bg_models.append(create_new_bg_model(cam))
+    find_trajectory(show_cluster_plot=True)
+    # frame_cam_map = {1:1, 2:480, 3:96, 4:528}
+    # for cam, frame in frame_cam_map.items():
+    #     cluster_and_create_color_model(bg_models, frame=frame, base_cam=cam)

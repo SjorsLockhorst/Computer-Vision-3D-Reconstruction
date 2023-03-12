@@ -7,7 +7,7 @@ import glm
 import numpy as np
 from tqdm import tqdm
 
-from background import load_background_model, substract_background
+from background import substract_background_new
 from calibration import (
     draw_axes_from_zero,
     get_frame,
@@ -148,29 +148,34 @@ def plot_projection(cam_num, point):
     cv.waitKey(0)
 
 
-def generate_voxels(width, heigth, depth, frame):
+def generate_voxels(width, heigth, depth, frame, bg_models, verbose=False):
     lookup_table = create_lookup_table()
     voxels_to_draw = set(lookup_table.keys())
 
-    for cam in conf.CAMERAS:
-        bg_model = load_background_model(cam)
+    masks = []
+    contours = []
+    for cam, bg_model in zip(conf.CAMERAS, bg_models):
         vid_dir = conf.main_vid_path(cam)
         vid = cv.VideoCapture(vid_dir)
 
         img = get_frame(vid, frame)
-        mask = substract_background(
-            bg_model, img, (conf.H_THRESH, conf.S_THRESH, conf.V_THRESH), n_biggest=4)[1]
+        mask, biggest = substract_background_new(img, bg_model)
+        masks.append(masks)
+        contours.append(biggest)
+        if verbose:
+            print(f"Cam: {cam}, {len(biggest)} contours.")
+            cv.imshow(f"Mask {cam}", mask)
         is_in_mask = in_mask(lookup_table, cam, mask)
 
         # Make sure that only voxels that are already in all previous masks are added
         voxels_to_draw = voxels_to_draw & is_in_mask
 
 
-    return list(voxels_to_draw)
+    return list(voxels_to_draw), masks, contours
 
 
-def get_voxels_in_world_coods(width, height, depth, frame):
-    voxels = generate_voxels(width, height, depth, frame)
+def get_voxels_in_world_coods(width, height, depth, frame, bg_models, verbose=False):
+    voxels = generate_voxels(width, height, depth, frame, bg_models, verbose=verbose)
     return np.array(voxels)
 
 def set_voxel_positions(width, height, depth, opengl=True):

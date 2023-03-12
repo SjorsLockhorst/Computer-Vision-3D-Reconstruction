@@ -1,5 +1,7 @@
 """Configuration"""
 import os
+import pickle
+
 
 import numpy as np
 
@@ -90,6 +92,7 @@ class ClusteringConf():
 
     STRIDE_LEN = 115
     CHESS_DIMS = (8, 6)
+    RANDOM_STATE = 42
 
 # Intrinsic calibration tunable parameters
     CALIB_INTR = False
@@ -129,6 +132,10 @@ class ClusteringConf():
             calib_path, f"tvec_{num}.npy"), allow_pickle=True)
         return rvec, tvec
 
+    def load_color_model(self, num):
+        with open(self.color_model_path(num), "rb") as file:
+            return pickle.load(file)
+
     def _get_vid(self, num, dirname):
         path = os.path.join(self.DATA_DIR, dirname)
         file = f"{num}.avi"
@@ -153,6 +160,9 @@ class ClusteringConf():
 
     def lookup_table_path(self):
         return os.path.abspath(os.path.join("calibration", "lookup_table.pickle"))
+
+    def color_model_path(self, num):
+        return os.path.abspath(os.path.join("calibration", f"color_model_{num}.pickle"))
 
 
 if ACTIVE_CONF == "voxel":
