@@ -4,7 +4,6 @@ import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from scipy.special import softmax
 
 from assignment import get_voxels_in_world_coods
 from config import conf
@@ -13,28 +12,42 @@ from background import create_new_bg_model, substract_background_new
 from color_model import fit_color_model, predict_color_model
 
 
-def iterative_elimination(table):
+def iterative_elimination(table, use_best_row = True):
 
+    best_scores = np.zeros(table[0].shape)
+    best_scores[:, :] = -np.infty
+
+    for i in range(table.shape[0]):
+        scores = table[i]
+        for j in range(table.shape[1]):
+            if scores[j].max() > best_scores[j].max():
+                best_scores[j] = scores[j]
+
+    # print(best_scores)
+    # print(np.argmax(table, axis=1))
+    # print(table)
     list_mean_max_row_cams = []
-    
+     
     for cam in table:
         max_row = np.max(cam, axis=1)
         mean_max_row = np.mean(max_row)
         list_mean_max_row_cams.append(mean_max_row)
-    
+   
     index_cam = np.argmax(list_mean_max_row_cams)
     
     new_table = table[index_cam].astype(float)
+    if use_best_row:
+        new_table = best_scores
+
+    mapping = np.zeros(table.shape[1], dtype=int)
     
-    mapping = np.zeros(table.shape[0], dtype=int)
-    
-    for i in range(table.shape[0]):
-    
+    for i in range(table.shape[1]):
         max_index = np.unravel_index(new_table.argmax(), new_table.shape)
         row, column = max_index
         mapping[row] = column
         new_table[row, :] = -np.inf
         new_table[:, column] = -np.inf 
+
     
     return mapping
 
@@ -85,6 +98,14 @@ def cluster_voxels(frame, bg_models, verbose=False):
     camera_contour_lengths = np.array([len(contour) for contour in contours])
     # return kmeans_clustering(voxel_arr, n_clusters=camera_contour_lengths.max())
     return (*kmeans_clustering(voxel_arr, n_clusters=4), camera_contour_lengths)
+
+    # Call kmeans with k = 4
+    # last_k = 4
+    # call function that thresholds clusters, store in n_valid_clusters
+    # While n_valid_cluster != last k:
+    # last_k -= 1
+    # clusters = kmeans_clustering(valid_voxels, n_clusters = last_k)
+    # n_valid_clusters = threshold(cluster)
 
 
 def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False, above_z_ratio=1/2, below_z_ratio=1/10):
@@ -188,8 +209,8 @@ def find_and_classify_people(frame_id, bg_models, color_models, base_cam, verbos
 
     if verbose:
         print(f"Predicted classes: {preds}")
-
     sorted_index = np.array(preds).argsort()
+
     return np.array(clusters)[sorted_index], centers[sorted_index], np.array(cluster_colors)[sorted_index], preds
 
 
@@ -217,7 +238,7 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
 
     steps = [[], [], [], []]
 
-    for frame_id in tqdm(range(0, 300, 1)):
+    for frame_id in tqdm(range(0, 400, 24)):
         img = get_frame(vid, frame_id)
         if img is None:
             break
