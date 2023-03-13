@@ -26,9 +26,9 @@ def iterative_elimination(table):
     
     new_table = table[index_cam].astype(float)
     
-    mapping = np.zeros(table.shape(0), dtype=int)
+    mapping = np.zeros(table.shape[0], dtype=int)
     
-    for i in range(table.shape(0)):
+    for i in range(table.shape[0]):
     
         max_index = np.unravel_index(new_table.argmax(), new_table.shape)
         row, column = max_index
