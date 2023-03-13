@@ -4,6 +4,8 @@ Python OpenGL 3.3
 <img src="ss/ss.png" data-canonical-src="ss/ss.png" width="600" height="400" alt="Computer Vision 3D Reconstruction" />
 
 ## Installation
+Tested with Python 3.9.0. You can see all the libraries and versions in requirements.txt.
+
 Install following packages via pip:
 1. PyOpenGL: `pip install PyOpenGL PyOpenGL_accelerate`
 2. GLFW: `pip install glfw`

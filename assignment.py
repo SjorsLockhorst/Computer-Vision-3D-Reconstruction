@@ -25,7 +25,7 @@ frame = 1  # Frame to initialise
 def generate_grid(width, depth):
     # Generates the floor grid locations
     # You don't need to edit this function
-    data = []
+    data, colors = [], []
     for x in range(width):
         for z in range(depth):
             data.append([x*block_size - width/2, -
