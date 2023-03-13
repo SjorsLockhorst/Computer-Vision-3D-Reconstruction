@@ -13,6 +13,31 @@ from background import create_new_bg_model, substract_background_new
 from color_model import fit_color_model, predict_color_model
 
 
+def iterative_elimination(table):
+
+    list_mean_max_row_cams = []
+    
+    for cam in table:
+        max_row = np.max(cam, axis=1)
+        mean_max_row = np.mean(max_row)
+        list_mean_max_row_cams.append(mean_max_row)
+    
+    index_cam = np.argmax(list_mean_max_row_cams)
+    
+    new_table = table[index_cam].astype(float)
+    
+    mapping = np.zeros(table.shape[0], dtype=int)
+    
+    for i in range(table.shape[0]):
+    
+        max_index = np.unravel_index(new_table.argmax(), new_table.shape)
+        row, column = max_index
+        mapping[row] = column
+        new_table[row, :] = -np.inf
+        new_table[:, column] = -np.inf 
+    
+    return mapping
+
 def kmeans_clustering(voxel_arr, n_clusters = 4):
     """Preform k-means clustering on voxels."""
 
@@ -76,8 +101,10 @@ def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False, above_z_rati
     rvec, tvec = conf.load_extr_calib(base_cam)
 
     min_z = voxels[:, 2].min(axis=0)
+
     pants_cutof = voxels[:, 2] < min_z * above_z_ratio
     head_cutof = voxels[:, 2] > min_z - min_z * below_z_ratio
+
     voxels = voxels[pants_cutof & head_cutof]
 
     projected_points = cv.projectPoints(voxels, rvec, tvec, mtx, dist)[0]
@@ -104,7 +131,7 @@ def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False, above_z_rati
 
 def test_colors(bg_models):
     frame = 1
-    clusters, centers = cluster_voxels(frame, bg_models)
+    clusters, centers, _ = cluster_voxels(frame, bg_models)
     plot_clusters(clusters, centers)
     plt.show()
     CAM_NUM = 3
@@ -127,7 +154,7 @@ def test_colors(bg_models):
 
 def cluster_and_create_color_model(bg_models, frame=1, base_cam=3):
 
-    clusters, centers = cluster_voxels(frame, bg_models)
+    clusters, centers, _ = cluster_voxels(frame, bg_models)
     cluster_colors = [get_voxel_colors(
         cluster, frame, base_cam=base_cam) for cluster in clusters]
 
@@ -139,7 +166,8 @@ def cluster_and_create_color_model(bg_models, frame=1, base_cam=3):
     return gm
 
 
-def find_and_classify_people(frame_id, bg_models, color_model, base_cam, verbose=False):
+# Make sure we actually use different color models for each camera
+def find_and_classify_people(frame_id, bg_models, color_models, base_cam, verbose=False):
     clusters, centers, contour_lens = cluster_voxels(
         frame_id, bg_models, verbose=verbose)
 
@@ -151,15 +179,12 @@ def find_and_classify_people(frame_id, bg_models, color_model, base_cam, verbose
         cam_scores = []
         for cluster, center in zip(clusters, centers):
             colors = get_voxel_colors(cluster, frame_id, base_cam=cam)
-            scores = predict_color_model(color_model, colors)
+            scores = predict_color_model(color_models[cam - 1], colors)
             cluster_colors.append(colors)
             cam_scores.append(scores)
         all_scores.append(cam_scores)
 
-    avg_preds = np.average(all_scores, axis=0, weights=contour_lens**2)
-    avg_preds = softmax(avg_preds, axis=0)
-    avg_preds = softmax(avg_preds, axis=1)
-    preds = np.argmax(avg_preds, axis=1)
+    preds = iterative_elimination(np.array(all_scores))
 
     if verbose:
         print(f"Predicted classes: {preds}")
@@ -175,9 +200,9 @@ def find_and_classify_people(frame_id, bg_models, color_model, base_cam, verbose
 # 3. Predicted color based on color model
 
 def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame=False, show_colors = False):
-    CAM = 4
-    color_model = conf.load_color_model(CAM)
+    CAM = 2
     HALFWAY_Z = -800
+
     mtx, dist = conf.load_intr_calib(CAM)
     rvec, tvec = conf.load_extr_calib(CAM)
     vid_path = conf.main_vid_path(CAM)
@@ -185,21 +210,23 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
     length = int(vid.get(cv.CAP_PROP_FRAME_COUNT))
 
     bg_models = []
+    color_models = []
     for cam in conf.CAMERAS:
         bg_models.append(create_new_bg_model(cam))
+        color_models.append(conf.load_color_model(cam))
 
     steps = [[], [], [], []]
-    for frame_id in tqdm(range(0, length, 4)):
+
+    for frame_id in tqdm(range(0, 300, 1)):
         img = get_frame(vid, frame_id)
         if img is None:
             break
         clusters, centers, colors, preds = find_and_classify_people(
-            frame_id, bg_models, color_model, CAM, verbose=verbose)
+            frame_id, bg_models, color_models, CAM, verbose=verbose)
 
-        if len(set(preds)) != len(preds):
-            continue
         for idx, center in enumerate(centers):
             steps[idx].append(center)
+
         if show_cluster_plot:
             plot_clusters(clusters, centers)
 
@@ -246,6 +273,8 @@ if __name__ == "__main__":
     # bg_models = []
     # for cam in conf.CAMERAS:
     #     bg_models.append(create_new_bg_model(cam))
+    # test_colors(bg_models)
+
     find_trajectory(*[True]* 4)
     # frame_cam_map = {1:1, 2:480, 3:96, 4:528}
     # for cam, frame in frame_cam_map.items():

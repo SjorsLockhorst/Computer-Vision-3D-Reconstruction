@@ -52,10 +52,10 @@ def substract_background_new(image, background_model):
     foreground_image = background_model.apply(image, learningRate=0)
     
     # remove noise through dilation and erosion
-    # erosion_elt = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
-    # dilation_elt = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
-    # foreground_image = cv.dilate(foreground_image, dilation_elt)
-    # foreground_image = cv.erode(foreground_image, erosion_elt)
+    erosion_elt = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
+    dilation_elt = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
+    foreground_image = cv.dilate(foreground_image, dilation_elt)
+    foreground_image = cv.erode(foreground_image, erosion_elt)
     contours, _ = cv.findContours(
         foreground_image, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
     new_mask = np.zeros((image.shape[0], image.shape[1]))
