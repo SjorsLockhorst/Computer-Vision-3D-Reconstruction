@@ -89,23 +89,41 @@ def plot_clusters(clusters, centers):
     ax.set_ylim((-2000, 5000))
     plt.pause(0.05)
 
+# Function that thresholds clusters, now at 0 for test
+def threshold_clusters(clusters):
+    n_valid_clusters = 0
+    for cluster in clusters:
+        print("CLUSTER SIZE")
+        print(len(cluster))
+        if len(cluster) > 500:
+            n_valid_clusters += 1
+    return n_valid_clusters
 
 def cluster_voxels(frame, bg_models, verbose=False):
     """Cluster voxels given a certain frame."""
     points, masks, contours = get_voxels_in_world_coods(
         512, 256, 512, frame, bg_models, verbose=verbose)
     voxel_arr = np.array(points)
-    camera_contour_lengths = np.array([len(contour) for contour in contours])
+    # camera_contour_lengths = np.array([len(contour) for contour in contours])
     # return kmeans_clustering(voxel_arr, n_clusters=camera_contour_lengths.max())
-    return (*kmeans_clustering(voxel_arr, n_clusters=4), camera_contour_lengths)
-
-    # Call kmeans with k = 4
-    # last_k = 4
-    # call function that thresholds clusters, store in n_valid_clusters
-    # While n_valid_cluster != last k:
-    # last_k -= 1
-    # clusters = kmeans_clustering(valid_voxels, n_clusters = last_k)
-    # n_valid_clusters = threshold(cluster)
+    clusters, centers = kmeans_clustering(voxel_arr, n_clusters=4)
+    last_k = 4
+    n_valid_clusters = threshold_clusters(clusters)
+    while n_valid_clusters != last_k:
+        last_k -= 1
+        clusters, centers = kmeans_clustering(voxel_arr, n_clusters=last_k)
+        n_valid_clusters = threshold_clusters(clusters)
+    return clusters, centers
+   
+    # return (*kmeans_clustering(voxel_arr, n_clusters=4), camera_contour_lengths)
+    # Implementation outside of voxel
+    # Call kmeans with k = 4 DONE
+    # last_k = 4 DONE
+    # call function that thresholds clusters, store in n_valid_clusters DONE
+    # While n_valid_cluster != last_k: DONE
+    # last_k -= 1 DONE
+    # clusters = kmeans_clustering(valid_voxels, n_clusters = last_k) DONE
+    # n_valid_clusters = threshold(cluster) DONE
 
 
 def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False, above_z_ratio=1/2, below_z_ratio=1/10):
@@ -189,7 +207,7 @@ def cluster_and_create_color_model(bg_models, frame=1, base_cam=3):
 
 # Make sure we actually use different color models for each camera
 def find_and_classify_people(frame_id, bg_models, color_models, base_cam, verbose=False):
-    clusters, centers, contour_lens = cluster_voxels(
+    clusters, centers = cluster_voxels(                         # TOOK CONTOUR LENS OUT
         frame_id, bg_models, verbose=verbose)
 
     preds = []
