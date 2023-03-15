@@ -5,14 +5,13 @@ import cv2 as cv
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from assignment import get_voxels_in_world_coods
 from config import conf
 from calibration import get_frame
 from background import create_new_bg_model, substract_background_new
 from color_model import fit_color_model, predict_color_model
 
 
-def iterative_elimination(table, use_best_row = True):
+def create_best_scores(table, use_best_row = True):
 
     best_scores = np.zeros(table[0].shape)
     best_scores[:, :] = -np.infty
@@ -23,9 +22,6 @@ def iterative_elimination(table, use_best_row = True):
             if scores[j].max() > best_scores[j].max():
                 best_scores[j] = scores[j]
 
-    # print(best_scores)
-    # print(np.argmax(table, axis=1))
-    # print(table)
     list_mean_max_row_cams = []
      
     for cam in table:
@@ -99,11 +95,9 @@ def threshold_clusters(clusters):
             n_valid_clusters += 1
     return n_valid_clusters
 
-def cluster_voxels(frame, bg_models, verbose=False):
+def cluster_voxels(voxels, frame, bg_models, verbose=False):
     """Cluster voxels given a certain frame."""
-    points, masks, contours = get_voxels_in_world_coods(
-        512, 256, 512, frame, bg_models, verbose=verbose)
-    voxel_arr = np.array(points)
+    voxel_arr = np.array(voxels)
     # camera_contour_lengths = np.array([len(contour) for contour in contours])
     # return kmeans_clustering(voxel_arr, n_clusters=camera_contour_lengths.max())
     clusters, centers = kmeans_clustering(voxel_arr, n_clusters=4)
@@ -206,9 +200,10 @@ def cluster_and_create_color_model(bg_models, frame=1, base_cam=3):
 
 
 # Make sure we actually use different color models for each camera
-def find_and_classify_people(frame_id, bg_models, color_models, base_cam, verbose=False):
+def find_and_classify_people(voxels, frame_id, bg_models, color_models, verbose=False):
+    
     clusters, centers = cluster_voxels(                         # TOOK CONTOUR LENS OUT
-        frame_id, bg_models, verbose=verbose)
+        voxels, frame_id, bg_models, verbose=verbose)
 
     preds = []
     cluster_colors = []
@@ -223,7 +218,7 @@ def find_and_classify_people(frame_id, bg_models, color_models, base_cam, verbos
             cam_scores.append(scores)
         all_scores.append(cam_scores)
 
-    preds = iterative_elimination(np.array(all_scores))
+    preds = create_best_scores(np.array(all_scores))
 
     if verbose:
         print(f"Predicted classes: {preds}")
@@ -256,7 +251,7 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
 
     steps = [[], [], [], []]
 
-    for frame_id in tqdm(range(0, 400, 24)):
+    for frame_id in tqdm(range(0, length, 4)):
         img = get_frame(vid, frame_id)
         if img is None:
             break
@@ -309,12 +304,13 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
     plt.show()
     #
 if __name__ == "__main__":
-    # bg_models = []
-    # for cam in conf.CAMERAS:
-    #     bg_models.append(create_new_bg_model(cam))
-    # test_colors(bg_models)
+    bg_models = []
+    for cam in conf.CAMERAS:
+        bg_models.append(create_new_bg_model(cam))
+    test_colors(bg_models)
 
-    find_trajectory(*[True]* 4)
-    # frame_cam_map = {1:1, 2:480, 3:96, 4:528}
-    # for cam, frame in frame_cam_map.items():
-    #     cluster_and_create_color_model(bg_models, frame=frame, base_cam=cam)
+    # find_trajectory()
+    frame_cam_map = {1:1, 2:480, 3:96, 4:528}
+
+    for cam, frame in frame_cam_map.items():
+        cluster_and_create_color_model(bg_models, frame=frame, base_cam=cam)

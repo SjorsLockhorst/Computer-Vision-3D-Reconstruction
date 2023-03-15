@@ -43,14 +43,17 @@ def create_background_model(cam_num):
     gaussian = np.stack((mean_background_hsv, std_background_hsv), axis=2)
 
     save_path = os.path.join(calib_path, f"background_{cam_num}")
-    print(save_path)
     np.save(save_path, gaussian)
     return gaussian
 
 
+def load_all_background_models():
+    return [create_new_bg_model(cam) for cam in conf.CAMERAS]
+
+
 def substract_background_new(image, background_model):
     foreground_image = background_model.apply(image, learningRate=0)
-    
+
     # remove noise through dilation and erosion
     erosion_elt = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
     dilation_elt = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
@@ -60,11 +63,11 @@ def substract_background_new(image, background_model):
         foreground_image, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
     new_mask = np.zeros((image.shape[0], image.shape[1]))
     biggest = sorted(contours, key=cv.contourArea, reverse=True)[:4]
-    biggest = [contour for contour in contours if cv.contourArea(contour) > 5000]
-
+    biggest = [
+        contour for contour in contours if cv.contourArea(contour) > 5000]
 
     full_mask = cv.fillPoly(new_mask, biggest, 1)
-            
+
     return full_mask, biggest
 
 
@@ -102,8 +105,8 @@ def substract_background(
     img,
     thresholds,
     erode_kernel=(3, 3),
-    dilate_kernel=(2,4),
-    gaussian_kernel=(3,3),
+    dilate_kernel=(2, 4),
+    gaussian_kernel=(3, 3),
     n_biggest=1,
 ):
     """Substract background from an image given a background model and parameters."""
@@ -118,7 +121,7 @@ def substract_background(
     h, s, v = thresholds
     full_mask = threshold_difference(std_diff, thresholds)
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    
+
     #
     full_mask = cv.GaussianBlur(full_mask, gaussian_kernel, 0)
 
@@ -129,7 +132,8 @@ def substract_background(
     contours, _ = cv.findContours(
         full_mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
     # biggest = sorted(contours, key=cv.contourArea, reverse=True)[:n_biggest]
-    biggest = [contour for contour in contours if cv.contourArea(contour) > 5000]
+    biggest = [
+        contour for contour in contours if cv.contourArea(contour) > 5000]
 
     # cv.drawContours(new_mask, biggest, -1, 1, -1)
     full_mask = cv.fillPoly(new_mask, biggest, 1)
@@ -267,4 +271,4 @@ if __name__ == "__main__":
     bg_models = []
     for cam in conf.CAMERAS:
         bg_models.append(create_new_bg_model(cam))
-    show_background_substraction(2, bg_models[1])
+    # show_background_substraction(2, bg_models[1])

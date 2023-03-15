@@ -7,7 +7,7 @@ import glm
 import numpy as np
 from tqdm import tqdm
 
-from background import substract_background_new
+from background import substract_background_new, load_all_background_models
 from calibration import (
     draw_axes_from_zero,
     get_frame,
@@ -15,6 +15,7 @@ from calibration import (
     load_intr_calibration,
 )
 from config import conf
+from clustering import find_and_classify_people
 
 block_size = 1.0
 
@@ -30,7 +31,8 @@ def generate_grid(width, depth):
         for z in range(depth):
             data.append([x*block_size - width/2, -
                         block_size, z*block_size - depth/2])
-    return data
+            colors.append([1.0, 1.0, 1.0] if (x+z) % 2 == 0 else [0, 0, 0])
+    return data, colors
 
 
 def create_clustering_voxel_set():
@@ -182,15 +184,25 @@ def set_voxel_positions(width, height, depth, opengl=True):
     """Calculate final voxel array"""
     global frame
 
-    voxels_to_draw = generate_voxels(width, height, depth, frame) 
+    bg_models = load_all_background_models()
+    color_models = []
+    for cam in conf.CAMERAS:
+        color_models.append(conf.load_color_model(cam))
+
+    voxels, _, _ = generate_voxels(width, height, depth, frame, bg_models)
+    clusters, centers, cluster_colors, preds = find_and_classify_people(voxels, frame, bg_models, color_models)
+
     # Put voxels in right scale and rearange axes for openGL
     scale_factor = conf.STRIDE_LEN / scale
 
+    colors = [(255, 255, 0), (255, 0, 255), (0, 0, 255), (0, 255, 0)]
     frame += 100
-    return [
+    flipped_voxels = [
         (x / scale_factor, -1 * z / scale_factor, y / scale_factor)
-        for x, y, z in voxels_to_draw
+        for x, y, z in voxels
     ]
+    colors = [(255, 0, 0)]*len(flipped_voxels)
+    return flipped_voxels, colors
 
 
 def get_cam_positions():
@@ -206,7 +218,7 @@ def get_cam_positions():
         cam_pos *= block_size
         cam_positions.append(cam_pos)
 
-    return [[cam_pos[0], -1 * cam_pos[2], cam_pos[1]] for cam_pos in cam_positions]
+    return [[cam_pos[0], -1 * cam_pos[2], cam_pos[1]] for cam_pos in cam_positions], [[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0], [1.0, 1.0, 0]]
 
 
 def get_cam_rotation_matrices(verbose=False):

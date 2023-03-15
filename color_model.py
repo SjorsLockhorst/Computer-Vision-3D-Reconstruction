@@ -6,8 +6,9 @@ from sklearn.mixture import GaussianMixture
 # input is a list of HSV values for each pixel
 
 
-def fit_color_model(cluster_hsv):
+def fit_color_model(cluster_hsv, prev_model):
     gms = []
+
     for hsv in cluster_hsv:
         gm = GaussianMixture(n_components=1, covariance_type='spherical', random_state=conf.RANDOM_STATE)
         gm.fit(hsv)
