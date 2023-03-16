@@ -138,15 +138,18 @@ def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False):
     rvec, tvec = conf.load_extr_calib(base_cam)
 
     min_z = voxels[:, 2].min(axis=0)
+    max_z = voxels[:, 2].max(axis=0)
+    dz = abs(min_z - max_z)
+
     min_x = voxels[:, 0].min(axis=0)
     max_x = voxels[:, 0].max(axis=0)
-    total_distance = abs(min_x - max_x)
+    dx = abs(min_x - max_x)
 
-    pants_cutof = voxels[:, 2] < min_z * above_z_ratio
-    head_cutof = voxels[:, 2] > min_z - min_z * below_z_ratio
+    pants_cutof = voxels[:, 2] < min_z + dz * above_z_ratio
+    head_cutof = voxels[:, 2] > min_z - dz * below_z_ratio
 
-    left_cutof = voxels[:, 0] > min_x + total_distance * above_x_ratio
-    right_cutof = voxels[:, 0] < max_x - total_distance * below_x_ratio
+    left_cutof = voxels[:, 0] > min_x + dx * above_x_ratio
+    right_cutof = voxels[:, 0] < max_x - dx * below_x_ratio
 
     voxels = voxels[pants_cutof & head_cutof & left_cutof & right_cutof]
 
@@ -225,7 +228,7 @@ def find_and_classify_people(voxels, frame_id, color_models, verbose=False):
             cam_scores.append(scores)
         all_scores.append(cam_scores)
 
-    preds = iterative_elimination(np.array(all_scores), use_best_row=False)
+    preds = iterative_elimination(np.array(all_scores), use_best_row=True)
     print(preds)
 
     if verbose:

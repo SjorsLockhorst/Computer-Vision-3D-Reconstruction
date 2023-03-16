@@ -296,7 +296,7 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
 
     steps = [[], [], [], []]
 
-    for frame_id in tqdm(range(0, length, 16)):
+    for frame_id in tqdm(range(0, length, 24)):
         img = get_frame(vid, frame_id)
         if img is None:
             break
@@ -342,6 +342,7 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
         plt.clf()
         a, b, c, d = [np.array(step) for step in steps]
         print(len(a), len(b), len(c), len(d))
+        plt.title("test")
         plt.scatter(a[:, 0], a[:, 1])
         plt.scatter(b[:, 0], b[:, 1], c='r')
         plt.scatter(c[:, 0], c[:, 1], c='g')
@@ -392,7 +393,7 @@ if __name__ == "__main__":
     #     cluster_and_create_color_model(voxels, base_model, frame=frame, base_cam=cam)
     #     print(cam, frame)
 
-    find_trajectory()
+    find_trajectory(show_cluster_plot=True)
     # find_good_frame(2)
     # for i in range(523, 540):
     #     voxels, _, _ = generate_voxels(i, bg_models)
