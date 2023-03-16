@@ -381,19 +381,20 @@ if __name__ == "__main__":
     # bg_models = []
     # for cam in conf.CAMERAS:
     #     bg_models.append(create_new_bg_model(cam))
-    # #
+    #
     # # find_trajectory()
     # frame_cam_map = {1:49, 2: 480, 4:511}
     # # #
     # voxels, _, _ = generate_voxels(1, bg_models)
     # base_model = cluster_and_create_color_model(voxels, None, frame=1, base_cam=3)
+    # test_colors(voxels, 0, 3, bg_models)
     #
     # for cam, frame in frame_cam_map.items():
     #     voxels, _, _ = generate_voxels(frame, bg_models)
     #     cluster_and_create_color_model(voxels, base_model, frame=frame, base_cam=cam)
     #     print(cam, frame)
 
-    find_trajectory(show_cluster_plot=True)
+    find_trajectory()
     # find_good_frame(2)
     # for i in range(523, 540):
     #     voxels, _, _ = generate_voxels(i, bg_models)

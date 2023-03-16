@@ -146,7 +146,7 @@ def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False):
     dx = abs(min_x - max_x)
 
     pants_cutof = voxels[:, 2] < min_z + dz * above_z_ratio
-    head_cutof = voxels[:, 2] > min_z - dz * below_z_ratio
+    head_cutof = voxels[:, 2] > min_z + dz * below_z_ratio
 
     left_cutof = voxels[:, 0] > min_x + dx * above_x_ratio
     right_cutof = voxels[:, 0] < max_x - dx * below_x_ratio
