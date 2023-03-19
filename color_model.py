@@ -32,7 +32,7 @@ def fit_color_model(cluster_hsv, base_model):
     return gms
 
 
-def predict_color_model(gms, hsv_arr):
+def predict_color_model(gms, hsv_arr ):
     scores = []
     for gm in gms:
         score = gm.score(hsv_arr.mean(axis=0).reshape(1, -1))

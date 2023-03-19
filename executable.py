@@ -1,16 +1,19 @@
 import glm
 import glfw
+import numpy as np
 from engine.base.program import get_linked_program
 from engine.renderable.model import Model
 from engine.buffer.texture import *
 from engine.buffer.hdrbuffer import HDRBuffer
 from engine.buffer.blurbuffer import BlurBuffer
 from engine.effect.bloom import Bloom
-from assignment import set_voxel_positions, generate_grid, get_cam_positions, get_cam_rotation_matrices
+from assignment import set_voxel_positions, generate_grid, get_cam_positions, get_cam_rotation_matrices, iter_clusters, scale
+from config import conf
 from engine.camera import Camera
 from engine.config import config
 
 cube, hdrbuffer, blurbuffer, lastPosX, lastPosY = None, None, None, None, None
+iterator = iter_clusters(start=0, step=24)
 firstTime = True
 window_width, window_height = config['window_width'], config['window_height']
 camera = Camera(glm.vec3(0, 100, 0), pitch=-90, yaw=0, speed=40)
@@ -184,8 +187,31 @@ def key_callback(window, key, scancode, action, mods):
         glfw.set_window_should_close(window, glfw.TRUE)
     if key == glfw.KEY_G and action == glfw.PRESS:
         global cube
-        positions, colors = set_voxel_positions(config['world_width'], config['world_height'], config['world_width'])
-        cube.set_multiple_positions(positions, colors)
+        global cluster_iterator
+
+        frame_id, clusters, centers, cluster_colors, preds = next(iterator)
+        colored_clusters = []
+        colors = [(255, 0, 0), (0, 0, 255), (0, 255, 0), (255, 0, 255)]
+
+        for cluster, pred in zip(clusters, preds):
+            color = np.zeros(cluster.shape)
+            color[:, :] = colors[pred]
+            colored_clusters.append(color)
+
+        
+        all_clusters = np.concatenate(clusters)
+        all_clusters[:, [1,2]] = all_clusters[:, [2, 1]]
+        all_clusters /= conf.STRIDE_LEN / scale
+        all_clusters[:, 1] = all_clusters[:, 1] * -1
+        print(all_clusters[0])
+
+        path_colors = [colors[pred] for pred in preds]
+        path = [((x, 0, y) for x, y in centers)]
+        print(path)
+        # positions, colors = set_voxel_positions(config['world_width'], config['world_height'], config['world_width'])
+
+
+        cube.set_multiple_positions(all_clusters, np.concatenate(colored_clusters))
 
 
 def mouse_move(win, pos_x, pos_y):

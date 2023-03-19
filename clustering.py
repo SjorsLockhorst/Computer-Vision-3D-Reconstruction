@@ -1,19 +1,29 @@
 import pickle
+import enum
 
 import numpy as np
 import cv2 as cv
-import matplotlib.pyplot as plt
-from tqdm import tqdm
 
 from config import conf
 from calibration import get_frame
-from background import create_new_bg_model, substract_background_new
+from background import substract_background_new
 from color_model import fit_color_model, predict_color_model
 
 
-def iterative_elimination(table, use_best_row = True):
+class EliminationMode(enum.Enum):
 
-    if use_best_row:
+    BEST_ROW = enum.auto()
+    WEIGHTED_AVG = enum.auto()
+    BEST_MAT = enum.auto()
+
+
+class ClusteringException(Exception):
+    pass
+
+
+def iterative_elimination(table, masks, contours, mode=EliminationMode.BEST_ROW):
+
+    if mode == EliminationMode.BEST_ROW:
         best_scores = np.zeros(table[0].shape)
         best_scores[:, :] = -np.infty
 
@@ -25,38 +35,47 @@ def iterative_elimination(table, use_best_row = True):
                     best_scores[j] = scores[j]
                     cam_cluster_map[j] = i + 1
 
-        print("Mapping between camera and cluster:")
-        print(cam_cluster_map)
-                
+        # print("Mapping between camera and cluster:")
+        # print(cam_cluster_map)
+
         new_table = best_scores
 
-    else:
+    elif mode == EliminationMode.WEIGHTED_AVG:
+        mask_weights = np.array([mask.sum() for mask in masks])
+        mask_weights_z = mask_weights / mask_weights.mean()
+
+        contour_weights = np.array([len(contour) for contour in contours])
+        contour_weights_z = contour_weights / contour_weights.mean()
+
+        new_table = np.average(
+            table, axis=0, weights=mask_weights_z + contour_weights_z)
+
+    elif mode == EliminationMode.BEST_MAT:
         list_mean_max_row_cams = []
-         
+
         for cam in table:
             max_row = np.max(cam, axis=1)
             mean_max_row = np.mean(max_row)
             list_mean_max_row_cams.append(mean_max_row)
-       
+
         index_cam = np.argmax(list_mean_max_row_cams)
-        print(f"Using camera {index_cam + 1}")
-        
+        # print(f"Using camera {index_cam + 1}")
+
         new_table = table[index_cam].astype(float)
 
-
     mapping = np.zeros(table.shape[1], dtype=int)
-    
+
     for i in range(table.shape[1]):
         max_index = np.unravel_index(new_table.argmax(), new_table.shape)
         row, column = max_index
         mapping[row] = column
         new_table[row, :] = -np.inf
-        new_table[:, column] = -np.inf 
+        new_table[:, column] = -np.inf
 
-    
     return mapping
 
-def kmeans_clustering(voxel_arr, n_clusters = 4):
+
+def kmeans_clustering(voxel_arr, n_clusters=4, clean_outliers=True):
     """Preform k-means clustering on voxels."""
 
     # Select only x y points for voxel
@@ -67,7 +86,7 @@ def kmeans_clustering(voxel_arr, n_clusters = 4):
 
     # Run k-means
     ret, labels, centers = cv.kmeans(
-        x_y_points, n_clusters, None, criteria, 10, cv.KMEANS_RANDOM_CENTERS)
+        x_y_points, n_clusters, None, criteria, 10, cv.KMEANS_PP_CENTERS)
 
     # If couldn't cluster, raise exception
     if not ret:
@@ -78,44 +97,48 @@ def kmeans_clustering(voxel_arr, n_clusters = 4):
     cluster_masks = [flattened_labels == i for i in range(n_clusters)]
     clusters = [voxel_arr[mask] for mask in cluster_masks]
 
+    if clean_outliers:
+        clean_clusters = []
+        for cluster, center in zip(clusters, centers):
+            distances = np.linalg.norm(cluster[:, :2] - center, axis=1)
+            mean_distance, std_distance = distances.mean(), distances.std()
+            abs_deviance = abs(mean_distance - distances)
+            z_scores = abs_deviance / std_distance
+            clean_clusters.append(cluster[z_scores < 2])
+
+        return clean_clusters, centers
+
     # Plot the data
     return clusters, centers
 
 
-
 # Function that thresholds clusters, now at 0 for test
-def threshold_clusters(clusters):
-    n_valid_clusters = 0
-    for cluster in clusters:
-        print("CLUSTER SIZE")
-        print(len(cluster))
-        if len(cluster) > 500:
-            n_valid_clusters += 1
-    return n_valid_clusters
+def threshold_clusters(clusters, centers):
+    THRESHOLD = 200
+    valid_clusters, valid_centers = [], []
+    for cluster, center in zip(clusters, centers):
+        if len(cluster) > THRESHOLD:
+            valid_clusters.append(cluster)
+            valid_centers.append(center)
+
+    return valid_clusters, valid_centers
+
 
 def cluster_voxels(voxels, frame, verbose=False):
     """Cluster voxels given a certain frame."""
     voxel_arr = np.array(voxels)
-    # camera_contour_lengths = np.array([len(contour) for contour in contours])
-    # return kmeans_clustering(voxel_arr, n_clusters=camera_contour_lengths.max())
     clusters, centers = kmeans_clustering(voxel_arr, n_clusters=4)
     last_k = 4
-    n_valid_clusters = threshold_clusters(clusters)
-    while n_valid_clusters != last_k:
+    valid_clusters, valid_centers = threshold_clusters(clusters, centers)
+    while len(valid_clusters) != last_k:
+        if len(valid_clusters) == 0:
+            raise ClusteringException
         last_k -= 1
-        clusters, centers = kmeans_clustering(voxel_arr, n_clusters=last_k)
-        n_valid_clusters = threshold_clusters(clusters)
-    return clusters, centers
-   
-    # return (*kmeans_clustering(voxel_arr, n_clusters=4), camera_contour_lengths)
-    # Implementation outside of voxel
-    # Call kmeans with k = 4 DONE
-    # last_k = 4 DONE
-    # call function that thresholds clusters, store in n_valid_clusters DONE
-    # While n_valid_cluster != last_k: DONE
-    # last_k -= 1 DONE
-    # clusters = kmeans_clustering(valid_voxels, n_clusters = last_k) DONE
-    # n_valid_clusters = threshold(cluster) DONE
+        clusters, centers = kmeans_clustering(
+            np.concatenate(valid_clusters), n_clusters=last_k)
+        valid_clusters, valid_centers = threshold_clusters(clusters, centers)
+
+    return valid_clusters, valid_centers
 
 
 def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False):
@@ -165,9 +188,10 @@ def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False):
     mask = np.zeros((hsv.shape[0], hsv.shape[1]))
     for idx, point in enumerate(squeezed_points):
         x, y = point.astype(int)
-        bgr = hsv[y][x]
-        colors[idx] = bgr
-        mask[y][x] = 1
+        hsv_pix = hsv[y][x]
+        if hsv_pix[2] > 30:
+            colors[idx] = hsv_pix
+            mask[y][x] = 1
 
     if show_cluster:
         cv.imshow("Cluster", mask)
@@ -209,10 +233,9 @@ def cluster_and_create_color_model(voxels, base_model, frame=1, base_cam=3):
     return gm
 
 
-# Make sure we actually use different color models for each camera
-def find_and_classify_people(voxels, frame_id, color_models, verbose=False):
-    
-    clusters, centers = cluster_voxels(                         # TOOK CONTOUR LENS OUT
+def find_and_classify_people(voxels, frame_id, color_models, masks, contours, verbose=False):
+
+    clusters, centers = cluster_voxels(
         voxels, frame_id, verbose=verbose)
 
     preds = []
@@ -228,8 +251,8 @@ def find_and_classify_people(voxels, frame_id, color_models, verbose=False):
             cam_scores.append(scores)
         all_scores.append(cam_scores)
 
-    preds = iterative_elimination(np.array(all_scores), use_best_row=True)
-    print(preds)
+    preds = iterative_elimination(
+        np.array(all_scores), masks, contours, mode=EliminationMode.BEST_ROW)
 
     if verbose:
         print(f"Predicted classes: {preds}")
@@ -237,12 +260,5 @@ def find_and_classify_people(voxels, frame_id, color_models, verbose=False):
     return clusters, centers, cluster_colors, preds
 
 
-# TODO: Make use of bg subtraction to know if the camera sees 4 seperate entities or not
-# TODO: Make a very verbose version that shows for each frame:
-# 1. Clustering of voxels
-# 2. Average color of each voxel
-# 3. Predicted color based on color model
-
-    #
 if __name__ == "__main__":
     pass
