@@ -153,6 +153,7 @@ def plot_projection(cam_num, point):
 
 
 def generate_voxels(frame, lookup_table, bg_models, verbose=False):
+    """Generate voxels."""
     voxels_to_draw = set(lookup_table.keys())
 
     masks = []
@@ -177,6 +178,7 @@ def generate_voxels(frame, lookup_table, bg_models, verbose=False):
 
 
 def get_voxels_in_world_coods(width, height, depth, frame, bg_models, verbose=False):
+    """Get voxels in world coordinates."""
     voxels = generate_voxels(width, height, depth,
                              frame, bg_models, verbose=verbose)
     return np.array(voxels)
@@ -263,6 +265,7 @@ def in_mask(lookup_table, cam_num, mask):
 
 
 def plot_clusters(clusters, centers):
+    """Plot clusters and centers."""
     x_y_clusters = [cluster[:, 0:2] for cluster in clusters]
     plt.clf()
     for cluster in x_y_clusters:
@@ -276,6 +279,7 @@ def plot_clusters(clusters, centers):
 
 
 def init_constants():
+    """Init constants that are needed for clustering."""
     lookup_table = create_lookup_table()
     bg_models = []
     color_models = []
@@ -288,6 +292,7 @@ def init_constants():
 
 
 def next_step(img, frame_id, color_models, lookup_table, bg_models, verbose):
+    """Generate, cluster and return clusters, colors."""
     voxels, masks, contours = generate_voxels(
         frame_id, lookup_table, bg_models, verbose=verbose)
 
@@ -296,6 +301,7 @@ def next_step(img, frame_id, color_models, lookup_table, bg_models, verbose):
 
 
 def iter_clusters(base_cam=3, verbose=False, **kwargs):
+    """Generator that loops over each frame and yields clusters and color predictions."""
 
     vid_path = conf.main_vid_path(base_cam)
     vid = cv.VideoCapture(vid_path)
@@ -312,7 +318,7 @@ def iter_clusters(base_cam=3, verbose=False, **kwargs):
     for frame_id in tqdm(range(start, stop, step)):
         img = get_frame(vid, frame_id)
         if img is None:
-            raise StopIteration
+            return exception_counter
         try:
             clusters, centers, cluster_colors, preds = next_step(
                 img, frame_id, color_models, lookup_table, bg_models, verbose)
@@ -324,21 +330,18 @@ def iter_clusters(base_cam=3, verbose=False, **kwargs):
     return exception_counter
 
 
-def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame=False, show_colors=False):
+def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame=False, show_colors=False, **kwargs):
+    """Find trajectory of clusters."""
     CAM = 2
-    # HALFWAY_Z = -800
 
     mtx, dist = conf.load_intr_calib(CAM)
     rvec, tvec = conf.load_extr_calib(CAM)
 
-    lookup_table, bg_models, color_models = init_constants()
-
     steps = [[], [], [], []]
 
-    for frame_id, clusters, centers, cluster_colors, preds in iter_clusters():
-
-        if len(centers) < 4:
-            print("Found less than 4 corners")
+    counter = 0
+    for frame_id, clusters, centers, cluster_colors, preds in iter_clusters(**kwargs):
+        counter += 1
 
         for center, pred in zip(centers, preds):
             steps[pred].append(center)
@@ -346,31 +349,6 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
         if show_cluster_plot:
             plot_clusters(clusters, centers)
 
-        # if show_colors:
-        #     _, biggest = substract_background_new(img, bg_models[CAM - 1])
-        #
-        #     new_mask = np.zeros(img.shape, dtype="uint8")
-        #     three_d_centers = np.zeros(
-        #         (centers.shape[0], centers.shape[1] + 1))
-        #     three_d_centers[:, :2] = centers
-        #     three_d_centers[:, 2] = HALFWAY_Z
-        #     projected_centers, _ = cv.projectPoints(
-        #         three_d_centers, rvec, tvec, mtx, dist)
-        #     projected_centers = np.squeeze(projected_centers)
-        #     for center, color in zip(projected_centers, colors):
-        #         x, y = map(int, center)
-        #         for contour in biggest:
-        #             if cv.pointPolygonTest(contour, center, False) > 0:
-        #                 cv.fillPoly(new_mask, [contour], color.mean(axis=0))
-        #
-        #     cv.imshow("new_mask", new_mask)
-
-        if show_reference_frame:
-            img = get_frame(vid, frame_id)
-            cv.imshow("Frame of reference cam", img)
-        if show_colors or show_reference_frame or verbose:
-            if cv.waitKey(1) == ord("q"):
-                cv.destroyAllWindows()
 
         plt.clf()
         a, b, c, d = [np.array(step) for step in steps]
@@ -383,6 +361,8 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
             ax = plt.gca()
             ax.set_xlim((-2000, 2000))
             ax.set_ylim((-1000, 3000))
+            if counter % 10 == 0:
+                plt.savefig("plot.png")
             plt.pause(0.05)
 
     plt.show()
@@ -390,6 +370,7 @@ def find_trajectory(verbose=False, show_cluster_plot=False, show_reference_frame
 
 
 def find_good_frame(cam):
+    """Find a frame with 4 contours, to use later for calibration."""
     vid_path = conf.main_vid_path(cam)
     vid = cv.VideoCapture(vid_path)
     length = int(vid.get(cv.CAP_PROP_FRAME_COUNT))
@@ -406,7 +387,8 @@ def find_good_frame(cam):
             cv.waitKey(100)
 
 
-def recalibrate_color_models():
+def fit_color_models():
+    """Fit all color models."""
     table = create_lookup_table(voxel_generator=create_clustering_voxel_set)
     bg_models = []
     for cam in conf.CAMERAS:
@@ -423,9 +405,4 @@ def recalibrate_color_models():
 
 
 if __name__ == "__main__":
-    # recalibrate_color_models()
     find_trajectory()
-    # find_good_frame(2)
-    # for i in range(523, 540):
-    #     voxels, _, _ = generate_voxels(i, bg_models)
-    #     test_colors(voxels, i, 4, bg_models)

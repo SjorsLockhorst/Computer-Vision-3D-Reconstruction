@@ -48,10 +48,12 @@ def create_background_model(cam_num):
 
 
 def load_all_background_models():
+    """Load all background models."""
     return [create_new_bg_model(cam) for cam in conf.CAMERAS]
 
 
 def substract_background_new(image, background_model):
+    """Subtract background for assignment 3, using builting cv function."""
     foreground_image = background_model.apply(image, learningRate=0)
 
     # remove noise through dilation and erosion
@@ -72,6 +74,7 @@ def substract_background_new(image, background_model):
 
 
 def create_new_bg_model(num):
+    """Subtract background for assignment 3, using builting cv function."""
     background_vid_path = conf.background_vid_path(num)
     vid = cv.VideoCapture(background_vid_path)
     bg_model = cv.createBackgroundSubtractorMOG2()
@@ -271,4 +274,3 @@ if __name__ == "__main__":
     bg_models = []
     for cam in conf.CAMERAS:
         bg_models.append(create_new_bg_model(cam))
-    # show_background_substraction(2, bg_models[1])

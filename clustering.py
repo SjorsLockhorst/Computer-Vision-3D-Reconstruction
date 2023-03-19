@@ -11,7 +11,7 @@ from color_model import fit_color_model, predict_color_model
 
 
 class EliminationMode(enum.Enum):
-
+    """Different modes for iterative elimination."""
     BEST_ROW = enum.auto()
     WEIGHTED_AVG = enum.auto()
     BEST_MAT = enum.auto()
@@ -21,22 +21,20 @@ class ClusteringException(Exception):
     pass
 
 
-def iterative_elimination(table, masks, contours, mode=EliminationMode.BEST_ROW):
+def iterative_elimination(log_likelihoods, masks, contours, mode=EliminationMode.BEST_ROW):
+    """Find best prediction from table of log likelihood scores."""
 
     if mode == EliminationMode.BEST_ROW:
-        best_scores = np.zeros(table[0].shape)
+        best_scores = np.zeros(log_likelihoods[0].shape)
         best_scores[:, :] = -np.infty
 
         cam_cluster_map = {}
-        for i in range(table.shape[0]):
-            scores = table[i]
-            for j in range(table.shape[1]):
+        for i in range(log_likelihoods.shape[0]):
+            scores = log_likelihoods[i]
+            for j in range(log_likelihoods.shape[1]):
                 if scores[j].max() > best_scores[j].max():
                     best_scores[j] = scores[j]
                     cam_cluster_map[j] = i + 1
-
-        # print("Mapping between camera and cluster:")
-        # print(cam_cluster_map)
 
         new_table = best_scores
 
@@ -48,24 +46,23 @@ def iterative_elimination(table, masks, contours, mode=EliminationMode.BEST_ROW)
         contour_weights_z = contour_weights / contour_weights.mean()
 
         new_table = np.average(
-            table, axis=0, weights=mask_weights_z + contour_weights_z)
+            log_likelihoods, axis=0, weights=mask_weights_z + contour_weights_z)
 
     elif mode == EliminationMode.BEST_MAT:
         list_mean_max_row_cams = []
 
-        for cam in table:
+        for cam in log_likelihoods:
             max_row = np.max(cam, axis=1)
             mean_max_row = np.mean(max_row)
             list_mean_max_row_cams.append(mean_max_row)
 
         index_cam = np.argmax(list_mean_max_row_cams)
-        # print(f"Using camera {index_cam + 1}")
 
-        new_table = table[index_cam].astype(float)
+        new_table = log_likelihoods[index_cam].astype(float)
 
-    mapping = np.zeros(table.shape[1], dtype=int)
+    mapping = np.zeros(log_likelihoods.shape[1], dtype=int)
 
-    for i in range(table.shape[1]):
+    for i in range(log_likelihoods.shape[1]):
         max_index = np.unravel_index(new_table.argmax(), new_table.shape)
         row, column = max_index
         mapping[row] = column
@@ -99,12 +96,13 @@ def kmeans_clustering(voxel_arr, n_clusters=4, clean_outliers=True):
 
     if clean_outliers:
         clean_clusters = []
+
         for cluster, center in zip(clusters, centers):
             distances = np.linalg.norm(cluster[:, :2] - center, axis=1)
             mean_distance, std_distance = distances.mean(), distances.std()
             abs_deviance = abs(mean_distance - distances)
             z_scores = abs_deviance / std_distance
-            clean_clusters.append(cluster[z_scores < 2])
+            clean_clusters.append(cluster[z_scores < 5])
 
         return clean_clusters, centers
 
@@ -112,9 +110,9 @@ def kmeans_clustering(voxel_arr, n_clusters=4, clean_outliers=True):
     return clusters, centers
 
 
-# Function that thresholds clusters, now at 0 for test
 def threshold_clusters(clusters, centers):
-    THRESHOLD = 200
+    """Thresholds clusters based on their size."""
+    THRESHOLD = 600
     valid_clusters, valid_centers = [], []
     for cluster, center in zip(clusters, centers):
         if len(cluster) > THRESHOLD:
@@ -133,7 +131,7 @@ def cluster_voxels(voxels, frame, verbose=False):
     while len(valid_clusters) != last_k:
         if len(valid_clusters) == 0:
             raise ClusteringException
-        last_k -= 1
+        last_k = len(valid_clusters)
         clusters, centers = kmeans_clustering(
             np.concatenate(valid_clusters), n_clusters=last_k)
         valid_clusters, valid_centers = threshold_clusters(clusters, centers)
@@ -142,7 +140,7 @@ def cluster_voxels(voxels, frame, verbose=False):
 
 
 def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False):
-    """Get colors of a certain cluster"""
+    """Get colors of a certain cluster."""
 
     above_z_ratio = 5/10
     below_z_ratio = 2/10
@@ -189,9 +187,8 @@ def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False):
     for idx, point in enumerate(squeezed_points):
         x, y = point.astype(int)
         hsv_pix = hsv[y][x]
-        if hsv_pix[2] > 30:
-            colors[idx] = hsv_pix
-            mask[y][x] = 1
+        colors[idx] = hsv_pix
+        mask[y][x] = 1
 
     if show_cluster:
         cv.imshow("Cluster", mask)
@@ -200,6 +197,7 @@ def get_voxel_colors(voxels, frame, base_cam=3, show_cluster=False):
 
 
 def test_colors(voxels, frame, cam, bg_models):
+    """Test the colors that different bg models give based on a frame."""
     clusters, centers = cluster_voxels(voxels, frame, bg_models)
     cluster_colors = [get_voxel_colors(
         cluster, frame, base_cam=cam, show_cluster=True) for cluster in clusters]
@@ -214,12 +212,12 @@ def test_colors(voxels, frame, cam, bg_models):
     for idx, colors in enumerate(cluster_colors):
         blank_image = np.zeros((800, 800, 3))
         blank_image[:, :, :] = colors.mean(axis=0)
-        # bgr = cv.cvtColor(blank_image, cv.COLOR_HSV2BGR)
         cv.imshow(f"Average color cluster {idx}", blank_image.astype('uint8'))
         cv.waitKey(0)
 
 
 def cluster_and_create_color_model(voxels, base_model, frame=1, base_cam=3):
+    """Cluster voxels and fit a color model."""
 
     clusters, centers = cluster_voxels(voxels, frame)
     cluster_colors = [get_voxel_colors(
@@ -234,6 +232,7 @@ def cluster_and_create_color_model(voxels, base_model, frame=1, base_cam=3):
 
 
 def find_and_classify_people(voxels, frame_id, color_models, masks, contours, verbose=False):
+    """From the voxels, cluster voxels and classify them based on colors."""
 
     clusters, centers = cluster_voxels(
         voxels, frame_id, verbose=verbose)

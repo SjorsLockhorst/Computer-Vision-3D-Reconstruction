@@ -13,7 +13,7 @@ from engine.camera import Camera
 from engine.config import config
 
 cube, hdrbuffer, blurbuffer, lastPosX, lastPosY = None, None, None, None, None
-iterator = iter_clusters(start=0, step=24)
+iterator = iter_clusters(start=0, step=8)
 firstTime = True
 window_width, window_height = config['window_width'], config['window_height']
 camera = Camera(glm.vec3(0, 100, 0), pitch=-90, yaw=0, speed=40)
@@ -205,10 +205,11 @@ def key_callback(window, key, scancode, action, mods):
         all_clusters[:, 1] = all_clusters[:, 1] * -1
         print(all_clusters[0])
 
-        path_colors = [colors[pred] for pred in preds]
-        path = [((x, 0, y) for x, y in centers)]
-        print(path)
+        # path_colors = [colors[pred] for pred in preds]
+        # print(centers)
+        # path = [((center[0], 0, center[1]) for center in centers)]
         # positions, colors = set_voxel_positions(config['world_width'], config['world_height'], config['world_width'])
+        # cube.set_multiple_positions(path, path_colors)
 
 
         cube.set_multiple_positions(all_clusters, np.concatenate(colored_clusters))

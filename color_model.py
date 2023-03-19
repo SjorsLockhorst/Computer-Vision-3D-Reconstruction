@@ -8,6 +8,7 @@ import cv2 as cv
 
 
 def fit_color_model(cluster_hsv, base_model):
+    """Fit a color model based on clusters HSV, order by a base model."""
     cluster_hsv = np.array(cluster_hsv)
     if base_model is not None:
         preds = []
@@ -33,6 +34,7 @@ def fit_color_model(cluster_hsv, base_model):
 
 
 def predict_color_model(gms, hsv_arr ):
+    """Get log likelihoods from a color model, based on an array of HSV values."""
     scores = []
     for gm in gms:
         score = gm.score(hsv_arr.mean(axis=0).reshape(1, -1))
@@ -42,6 +44,7 @@ def predict_color_model(gms, hsv_arr ):
 
 
 def eliminate(scores):
+    """Select best scores iteratively."""
     mapping = np.zeros(scores.shape[0], dtype=int)
     
     for i in range(scores.shape[0]):
@@ -52,16 +55,3 @@ def eliminate(scores):
         scores[:, column] = -np.inf 
     
     return mapping
-
-
-if __name__ == "__main__":
-    hsv_array = np.random.rand(100, 100, 3)
-    hsv_array[..., 0] *= 360
-    n_pixels = hsv_array.shape[0] * hsv_array.shape[1]
-    hsv_array_2d = hsv_array.reshape(n_pixels, 3)
-    gmm = fit_color_model(hsv_array_2d)
-    labels = gmm.predict_proba(hsv_array_2d)
-    print(labels.min())
-
-    labels = gmm.predict(hsv_array_2d * 100_000)
-    print((labels == 0).sum() / len(labels))
