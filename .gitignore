@@ -136,3 +136,4 @@ data/cam*/*.xml
 data/cam*/*.png
 data/*.xml
 data/lookup_table.pickle
+clustering/data
